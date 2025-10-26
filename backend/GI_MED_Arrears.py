@@ -501,8 +501,8 @@ def split_mauritius_address(full_address):
 for index, row in df.iterrows():
     current_row = index + 1
     
-    # Progress indicator every 50 records
-    if current_row % 50 == 0 or current_row == 1 or current_row == len(df):
+    # Progress indicator every 25 records for more frequent updates
+    if current_row % 25 == 0 or current_row == 1 or current_row == len(df):
         print(f"[PROGRESS] Processing row {current_row} of {len(df)} ({(current_row/len(df)*100):.1f}%)")
     
     print(f"[PROCESSING] Row {current_row} of {len(df)}")
@@ -581,7 +581,13 @@ for index, row in df.iterrows():
     safe_name = sanitize_filename(full_customer_name)
     safe_policy = sanitize_filename(pol_no)
     
-    print(f"[DEBUG] Processing: {full_customer_name} - Policy: {pol_no}")
+    # Create sequence number for Excel order preservation
+    excel_row = index + 1
+    total_records = len(df)
+    padding = len(str(total_records))  # Auto-adjust padding based on total records
+    sequence_num = f"{excel_row:0{padding}d}"
+    
+    print(f"[DEBUG] Processing: {full_customer_name} - Policy: {pol_no} (Row {excel_row})")
     
     # Format dates
     pol_from_formatted = format_date(pol_from_dt)
@@ -714,8 +720,8 @@ for index, row in df.iterrows():
         print(f"⚠️ Skipping PDF generation for {full_customer_name} due to API error")
         continue
     
-    # Create PDF
-    pdf_filename = f"{output_folder}/{safe_policy}_{safe_name}_mise_en_demeure.pdf"
+    # Create PDF with sequence number for Excel order preservation
+    pdf_filename = f"{output_folder}/{sequence_num}_MED_{safe_policy}_{safe_name}_mise_en_demeure.pdf"
     c = canvas.Canvas(pdf_filename, pagesize=A4)
     width, height = A4
     margin = 50
@@ -958,7 +964,7 @@ for index, row in df.iterrows():
     # Update comments for successful generation
     df.at[index, 'COMMENTS'] = 'Letter generated successfully'
     
-    print(f"✅ Arrears letter PDF generated for {full_customer_name}")
+    print(f"✅ MED letter generated for {full_customer_name} (Policy: {pol_no})")
     
     # Clean up QR file
     if qr_filename and os.path.exists(qr_filename):

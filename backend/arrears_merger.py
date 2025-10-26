@@ -4,11 +4,13 @@
 NICL Arrears Letters Merger
 Merges all individual arrears letters from respective folders into single PDFs for printing
 Handles L0, L1, L2, and MED recovery action types
+Maintains Excel row order through sequential filename sorting
 """
 
 import os
 import glob
 import fitz  # PyMuPDF
+import re
 from datetime import datetime
 
 def merge_recovery_letters(input_folder, output_folder, letter_type):
@@ -36,13 +38,18 @@ def merge_recovery_letters(input_folder, output_folder, letter_type):
         print(f"⚠️  No PDF files found in {input_folder} - skipping {letter_type}")
         return None
     
-    # Sort files alphabetically for consistent ordering
-    pdf_files.sort()
+    # Sort files by sequence number to maintain Excel order
+    pdf_files = sort_files_by_sequence(pdf_files)
+    
+    # Validate sequence integrity
+    sequence_valid = validate_sequence_order(pdf_files, letter_type)
+    if not sequence_valid:
+        print(f"   ⚠️  {letter_type} sequence validation failed, but continuing with merge...")
     
     print(f"\n📋 Processing {letter_type} Letters:")
     print(f"   📂 Input folder: {input_folder}")
     print(f"   📄 Output file: {output_filename}")
-    print(f"   📊 Found {len(pdf_files)} letters to merge")
+    print(f"   📊 Found {len(pdf_files)} letters to merge in Excel sequence order")
     
     try:
         # Create new merged document
@@ -111,6 +118,53 @@ def merge_recovery_letters(input_folder, output_folder, letter_type):
     except Exception as e:
         print(f"   ❌ Error during {letter_type} merging: {str(e)}")
         return None
+
+def sort_files_by_sequence(pdf_files):
+    """Sort PDF files by sequence number prefix to maintain Excel order"""
+    def extract_sequence(filename):
+        # Extract sequence number from filename like "0001_MED_policy.pdf"
+        basename = os.path.basename(filename)
+        match = re.match(r'^(\d+)_', basename)
+        return int(match.group(1)) if match else float('inf')
+    
+    return sorted(pdf_files, key=extract_sequence)
+
+def validate_sequence_order(pdf_files, letter_type):
+    """Verify files are in proper sequence and report any gaps"""
+    sequences = []
+    for file in pdf_files:
+        basename = os.path.basename(file)
+        match = re.match(r'^(\d+)_', basename)
+        if match:
+            sequences.append(int(match.group(1)))
+        else:
+            print(f"   ⚠️  Warning: {basename} doesn't follow sequence naming pattern")
+    
+    if not sequences:
+        return True  # No files to validate
+    
+    # Check for sequence integrity
+    min_seq = min(sequences)
+    max_seq = max(sequences)
+    expected_count = max_seq - min_seq + 1
+    actual_count = len(sequences)
+    
+    if actual_count == expected_count and len(set(sequences)) == actual_count:
+        print(f"   ✅ {letter_type} files in correct Excel sequence ({min_seq}-{max_seq})")
+        return True
+    else:
+        # Find gaps and duplicates
+        expected_set = set(range(min_seq, max_seq + 1))
+        actual_set = set(sequences)
+        gaps = expected_set - actual_set
+        duplicates = [seq for seq in sequences if sequences.count(seq) > 1]
+        
+        if gaps:
+            print(f"   ⚠️  Warning: {letter_type} sequence gaps: {sorted(gaps)}")
+        if duplicates:
+            print(f"   ⚠️  Warning: {letter_type} duplicate sequences: {sorted(set(duplicates))}")
+        
+        return False
 
 def cleanup_old_merged_files():
     """Clean up old merged PDF files before creating new ones"""

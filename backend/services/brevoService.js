@@ -3,9 +3,107 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import QRCode from 'qrcode';
+import fetch from 'node-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/**
+ * Generate ZwennPay QR code for payment
+ * @param {Object} recipient - Recipient details
+ * @returns {Promise<string|null>} - Base64 QR code image or null if failed
+ */
+const generateZwennPayQR = async (recipient) => {
+  try {
+    console.log(`🔄 Generating ZwennPay QR for ${recipient.name} (${recipient.policyNo})`);
+
+    // Extract mobile number (try to get from recipient data or use empty string)
+    const mobileNo = recipient.mobile || recipient.phone || '';
+
+    // Create customer label
+    const customerLabel = recipient.name || 'Valued Customer';
+
+    // API payload (same as L0.py)
+    const payload = {
+      "MerchantId": 153,
+      "SetTransactionAmount": false,
+      "TransactionAmount": 0,
+      "SetConvenienceIndicatorTip": false,
+      "ConvenienceIndicatorTip": 0,
+      "SetConvenienceFeeFixed": false,
+      "ConvenienceFeeFixed": 0,
+      "SetConvenienceFeePercentage": false,
+      "ConvenienceFeePercentage": 0,
+      "SetAdditionalBillNumber": true,
+      "AdditionalRequiredBillNumber": false,
+      "AdditionalBillNumber": recipient.policyNo.replace(/\//g, '.'),
+      "SetAdditionalMobileNo": true,
+      "AdditionalRequiredMobileNo": false,
+      "AdditionalMobileNo": mobileNo,
+      "SetAdditionalStoreLabel": false,
+      "AdditionalRequiredStoreLabel": false,
+      "AdditionalStoreLabel": "",
+      "SetAdditionalLoyaltyNumber": false,
+      "AdditionalRequiredLoyaltyNumber": false,
+      "AdditionalLoyaltyNumber": "",
+      "SetAdditionalReferenceLabel": false,
+      "AdditionalRequiredReferenceLabel": false,
+      "AdditionalReferenceLabel": "",
+      "SetAdditionalCustomerLabel": true,
+      "AdditionalRequiredCustomerLabel": false,
+      "AdditionalCustomerLabel": customerLabel,
+      "SetAdditionalTerminalLabel": false,
+      "AdditionalRequiredTerminalLabel": false,
+      "AdditionalTerminalLabel": "",
+      "SetAdditionalPurposeTransaction": true,
+      "AdditionalRequiredPurposeTransaction": false,
+      "AdditionalPurposeTransaction": "Arrears Payment"
+    };
+
+    // Call ZwennPay API
+    const response = await fetch("https://api.zwennpay.com:9425/api/v1.0/Common/GetMerchantQR", {
+      method: 'POST',
+      headers: {
+        "accept": "text/plain",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      timeout: 20000
+    });
+
+    if (response.ok) {
+      const qrData = (await response.text()).trim();
+
+      if (qrData && qrData.toLowerCase() !== 'null' && qrData.toLowerCase() !== 'none') {
+        // Generate QR code as base64 image
+        const qrCodeDataURL = await QRCode.toDataURL(qrData, {
+          errorCorrectionLevel: 'L',
+          type: 'image/png',
+          quality: 0.92,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          },
+          width: 200
+        });
+
+        console.log(`✅ QR code generated successfully for ${recipient.name}`);
+        return qrCodeDataURL;
+      } else {
+        console.log(`⚠️ No valid QR data received for ${recipient.name}`);
+        return null;
+      }
+    } else {
+      console.log(`❌ ZwennPay API request failed for ${recipient.name}: ${response.status}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`⚠️ Error generating QR for ${recipient.name}:`, error.message);
+    return null;
+  }
+};
 
 // Function to format currency amounts
 const formatCurrency = (amount) => {
@@ -29,21 +127,25 @@ const formatCurrency = (amount) => {
 let apiInstance;
 try {
   // Check if we have the API key
+  console.log('🔑 Checking Brevo API key...');
   if (!process.env.BREVO_API_KEY) {
     throw new Error('BREVO_API_KEY environment variable is not set');
   }
+  console.log('🔑 Brevo API key found:', process.env.BREVO_API_KEY ? 'Yes' : 'No');
 
   // Initialize API client
   const defaultClient = SibApiV3Sdk.ApiClient.instance;
   if (defaultClient && defaultClient.authentications) {
     const apiKeyAuth = defaultClient.authentications['api-key'];
     apiKeyAuth.apiKey = process.env.BREVO_API_KEY;
+    console.log('🔑 API key set in client');
   }
 
   apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
   console.log('✅ Brevo API initialized successfully');
 } catch (error) {
   console.error('❌ Brevo API initialization error:', error);
+  console.error('❌ Error details:', error.message);
   // Create a basic instance without authentication for now
   apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 }
@@ -345,8 +447,11 @@ National Insurance Company Limited
  * @returns {Promise} - Results of email sending
  */
 export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => {
+  console.log('📧 sendArrearsEmails called with:', { recipientCount: recipients.length, recoveryTypes });
+
   const senderConfig = SENDER_CONFIG.arrears;
-  
+  console.log('📧 Sender config:', senderConfig);
+
   const results = {
     success: 0,
     failed: 0,
@@ -380,6 +485,30 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
       const pdfBuffer = await fs.readFile(pdfPath);
       const pdfBase64 = pdfBuffer.toString('base64');
 
+      // Generate QR code and prepare logos for L0 recovery type
+      if (recipient.recoveryType === 'L0') {
+        const qrCodeImage = await generateZwennPayQR(recipient);
+        recipient.qrCodeImage = qrCodeImage;
+
+        // Load logos as base64 for direct embedding
+        try {
+          const maucasLogoPath = path.join(__dirname, '../maucas2.jpeg');
+          const zwennpayLogoPath = path.join(__dirname, '../zwennPay.jpg');
+
+          if (await fs.pathExists(maucasLogoPath)) {
+            const maucasLogoBuffer = await fs.readFile(maucasLogoPath);
+            recipient.maucasLogoBase64 = `data:image/jpeg;base64,${maucasLogoBuffer.toString('base64')}`;
+          }
+
+          if (await fs.pathExists(zwennpayLogoPath)) {
+            const zwennpayLogoBuffer = await fs.readFile(zwennpayLogoPath);
+            recipient.zwennpayLogoBase64 = `data:image/jpeg;base64,${zwennpayLogoBuffer.toString('base64')}`;
+          }
+        } catch (logoError) {
+          console.warn(`⚠️ Warning: Could not load logos for ${recipient.email}:`, logoError.message);
+        }
+      }
+
       // Create email content
       const emailContent = createArrearsEmailContent(recipient);
 
@@ -403,7 +532,7 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
 
       const recoveryTypeNames = {
         L0: 'Initial Notice',
-        L1: 'First Reminder', 
+        L1: 'First Reminder',
         L2: 'Final Notice',
         MED: 'Legal Notice (Mise en Demeure)'
       };
@@ -414,20 +543,33 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
       sendSmtpEmail.htmlContent = emailContent.html;
       sendSmtpEmail.textContent = emailContent.text;
 
-      // Attach PDF
-      sendSmtpEmail.attachment = [{
+      // Prepare attachments
+      const attachments = [{
         content: pdfBase64,
         name: path.basename(pdfPath),
         type: 'application/pdf'
       }];
 
+      // No need for logo attachments - using base64 data URLs directly
+
+      sendSmtpEmail.attachment = attachments;
+
       // Send email with API key in headers
+      console.log(`📧 Sending email to ${recipient.email}...`);
       const opts = {
         'headers': {
           'api-key': process.env.BREVO_API_KEY
         }
       };
-      await apiInstance.sendTransacEmail(sendSmtpEmail, opts);
+
+      console.log('📧 Email payload prepared:', {
+        to: sendSmtpEmail.to,
+        subject: sendSmtpEmail.subject,
+        hasAttachment: sendSmtpEmail.attachment ? sendSmtpEmail.attachment.length : 0
+      });
+
+      const emailResult = await apiInstance.sendTransacEmail(sendSmtpEmail, opts);
+      console.log('📧 Email API response:', emailResult);
 
       results.success++;
       console.log(`✅ Arrears email sent to ${recipient.email} (${recipient.name || 'N/A'}) - ${recipient.recoveryType}`);
@@ -451,6 +593,14 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
  */
 const findArrearsePDFForRecipient = async (recipient) => {
   try {
+    console.log(`\n🔍 === PDF MATCHING DEBUG for ${recipient.email} ===`);
+    console.log(`📋 Recipient data:`, {
+      email: recipient.email,
+      name: recipient.name,
+      policyNo: recipient.policyNo,
+      recoveryType: recipient.recoveryType
+    });
+
     // Map recovery types to directories
     const recoveryDirMap = {
       L0: path.join(__dirname, '../L0'),
@@ -460,6 +610,8 @@ const findArrearsePDFForRecipient = async (recipient) => {
     };
 
     const pdfDirectory = recoveryDirMap[recipient.recoveryType];
+    console.log(`📁 Looking in directory: ${pdfDirectory}`);
+
     if (!pdfDirectory || !await fs.pathExists(pdfDirectory)) {
       console.log(`❌ Directory not found for recovery type: ${recipient.recoveryType}`);
       return null;
@@ -467,26 +619,38 @@ const findArrearsePDFForRecipient = async (recipient) => {
 
     const files = await fs.readdir(pdfDirectory);
     const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+    console.log(`📄 Found ${pdfFiles.length} PDF files in directory:`);
+    pdfFiles.forEach((file, index) => {
+      console.log(`   ${index + 1}. ${file}`);
+    });
 
-    // Try to match by policy number or name
-    const searchTerms = [
-      recipient.policyNo,
-      recipient.name,
-      recipient.email.split('@')[0]
-    ].filter(Boolean);
+    // Simple policy number matching (most reliable)
+    if (recipient.policyNo && recipient.policyNo !== 'N/A') {
+      console.log(`🔍 Policy matching for "${recipient.policyNo}"`);
 
-    for (const term of searchTerms) {
-      const matchingFile = pdfFiles.find(file =>
-        file.toLowerCase().includes(term.toLowerCase().replace(/[^a-z0-9]/gi, '_'))
-      );
+      // Extract the numeric part from policy number (e.g., MED/2025/230/9/1195 → 2025_230_9_1195)
+      const policyParts = recipient.policyNo.replace(/^[A-Z]+\//, '').replace(/\//g, '_');
+      console.log(`   Looking for policy parts: "${policyParts}"`);
 
-      if (matchingFile) {
-        console.log(`📎 Found arrears PDF match: ${matchingFile} for ${recipient.email}`);
-        return path.join(pdfDirectory, matchingFile);
+      const policyMatch = pdfFiles.find(file => file.includes(policyParts));
+
+      if (policyMatch) {
+        console.log(`✅ FOUND MATCH: ${policyMatch}`);
+        console.log(`🔍 === END PDF MATCHING DEBUG ===\n`);
+        return path.join(pdfDirectory, policyMatch);
+      } else {
+        console.log(`❌ No policy match found for "${policyParts}"`);
       }
     }
 
-    console.log(`❌ No arrears PDF found for ${recipient.email} (${recipient.name}) - ${recipient.recoveryType}`);
+    console.log(`❌ NO MATCH FOUND for ${recipient.email} (${recipient.name}) - ${recipient.recoveryType}`);
+    console.log(`💡 Available PDFs in ${recipient.recoveryType} directory:`);
+    pdfFiles.forEach(file => console.log(`   - ${file}`));
+    console.log(`💡 Recipient details:`);
+    console.log(`   - Policy: ${recipient.policyNo}`);
+    console.log(`   - Name: ${recipient.name}`);
+    console.log(`   - Email: ${recipient.email}`);
+    console.log(`🔍 === END PDF MATCHING DEBUG ===\n`);
     return null;
 
   } catch (error) {
@@ -500,7 +664,7 @@ const findArrearsePDFForRecipient = async (recipient) => {
  */
 const createArrearsEmailContent = (recipient) => {
   const recoveryType = recipient.recoveryType || 'L0';
-  
+
   // Recovery type specific configurations
   const recoveryConfig = {
     L0: {
@@ -510,14 +674,14 @@ const createArrearsEmailContent = (recipient) => {
       tone: 'friendly'
     },
     L1: {
-      title: 'First Payment Notice', 
+      title: 'First Payment Notice',
       urgency: 'medium',
       color: '#f97316',
       tone: 'formal'
     },
     L2: {
       title: 'Final Payment Notice',
-      urgency: 'high', 
+      urgency: 'high',
       color: '#dc2626',
       tone: 'urgent'
     },
@@ -562,33 +726,62 @@ const createArrearsEmailContent = (recipient) => {
             
             <p>Please find attached your <strong>${config.title}</strong> ${recipient.policyNo ? `for Policy No. <strong>${recipient.policyNo}</strong>` : ''}.</p>
             
-            <div style="background: white; padding: 20px; border-radius: 6px; border-left: 4px solid ${config.color}; margin: 20px 0;">
-                <h3 style="margin-top: 0; color: ${config.color};">Important Information:</h3>
-                <ul style="margin: 0; padding-left: 20px;">
-                    <li>Please review the attached notice carefully</li>
-                    <li>Payment can be made via bank transfer or QR code</li>
-                    <li>Contact us immediately if you have any questions</li>
-                    ${config.urgency === 'critical' ? '<li><strong>Legal action may be initiated if payment is not received</strong></li>' : ''}
-                </ul>
-            </div>
+            <p>For your convenience, you may settle payments instantly via the QR Code shown below using mobile banking apps such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.</p>
             
-            <p>For your convenience, you may settle payments instantly via the QR Code included in your notice using mobile banking apps such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.</p>
-            
-            <div style="background: #fee2e2; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid ${config.color};">
-                <p style="margin: 0;"><strong>Payment Methods:</strong></p>
-                <p style="margin: 5px 0 0 0;">
-                    • Bank Transfer: Maubank (143100007063), MCB (000444155708), SBM (61030100056840)<br>
-                    • QR Code Payment: Use any mobile banking app<br>
-                    • Contact: <strong>602 3000</strong> or <a href="mailto:giarrearsrecovery@nicl.mu" style="color: ${config.color};">giarrearsrecovery@nicl.mu</a>
-                </p>
+            <!-- QR Code Payment Section -->
+            <div style="background: white; padding: 20px; border-radius: 6px; border: 2px solid ${config.color}; margin: 20px 0; text-align: center;">
+                <h3 style="margin-top: 0; color: ${config.color};">💳 Quick Payment via QR Code</h3>
+                <p style="margin: 10px 0; font-size: 16px;"><strong>Scan the QR code below to pay instantly</strong></p>
+                
+                ${recipient.recoveryType === 'L0' && recipient.qrCodeImage ? `
+                <!-- MauCAS Logo (Above QR Code) -->
+                ${recipient.maucasLogoBase64 ? `
+                <div style="margin: 15px 0; text-align: center;">
+                    <img src="${recipient.maucasLogoBase64}" alt="MauCAS" style="height: 42px; width: auto; max-width: 120px;" />
+                </div>
+                ` : ''}
+                
+                <!-- QR Code Image -->
+                <div style="margin: 20px 0;">
+                    <img src="${recipient.qrCodeImage}" alt="Payment QR Code" style="width: 200px; height: 200px; border: 2px solid #ddd; border-radius: 8px;" />
+                </div>
+                
+                <!-- Company Label -->
+                <div style="margin: 10px 0;">
+                    <p style="margin: 0; font-size: 16px; font-weight: bold; color: #333;">NIC Health Insurance</p>
+                </div>
+                
+                <!-- ZwennPay Logo (Below QR Code) -->
+                ${recipient.zwennpayLogoBase64 ? `
+                <div style="margin: 15px 0; text-align: center;">
+                    <img src="${recipient.zwennpayLogoBase64}" alt="ZwennPay" style="height: 60px; width: auto; max-width: 150px;" />
+                </div>
+                ` : ''}
+                ` : `
+                <!-- For non-L0 recovery types -->
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 15px 0;">
+                    <p style="margin: 0; font-size: 14px; color: #666;">
+                        <strong>Powered by:</strong> MauCAS Payment System<br>
+                        <strong>Payment by:</strong> ZwennPay Digital Wallet
+                    </p>
+                </div>
+                `}
+                
+                <!-- Supported Apps -->
+                <div style="margin: 15px 0;">
+                    <p style="margin: 5px 0; font-size: 14px; color: #666;">
+                        <strong>Supported Mobile Banking Apps:</strong><br>
+                        Juice • MauBank WithMe • Blink • MyT Money • Other Banking Apps
+                    </p>
+                </div>
+                
+                <div style="background: #e3f2fd; padding: 10px; border-radius: 4px; margin: 15px 0;">
+                    <p style="margin: 0; font-size: 14px;">
+                        <strong>Need Help?</strong><br>
+                        📞 <strong>602 3000</strong> | 📧 <a href="mailto:giarrearsrecovery@nicl.mu" style="color: ${config.color};">giarrearsrecovery@nicl.mu</a>
+                    </p>
+                </div>
             </div>
-            
-            ${config.urgency === 'critical' ? `
-            <div style="background: #fef2f2; padding: 15px; border-radius: 6px; margin: 20px 0; border: 2px solid #dc2626;">
-                <p style="margin: 0; color: #dc2626;"><strong>⚠️ URGENT: Legal Notice</strong></p>
-                <p style="margin: 5px 0 0 0; color: #dc2626;">This is a formal legal notice. Failure to respond may result in legal proceedings.</p>
-            </div>
-            ` : ''}
             
             <p>Thank you for your prompt attention to this matter.</p>
             
@@ -605,31 +798,23 @@ NICL Collections - ${config.title}
 
 Dear ${recipient.name || 'Valued Customer'},
 
-${config.tone === 'friendly' ? 
-  'This is a friendly reminder regarding your insurance policy premium payment.' :
-  config.tone === 'formal' ?
-  'We are writing to inform you about an outstanding premium payment on your insurance policy.' :
-  config.tone === 'urgent' ?
-  'This is an urgent notice regarding the outstanding premium payment on your insurance policy.' :
-  'This is a formal legal notice (Mise en Demeure) regarding the outstanding premium payment on your insurance policy.'
-}
+${config.tone === 'friendly' ?
+      'This is a friendly reminder regarding your insurance policy premium payment.' :
+      config.tone === 'formal' ?
+        'We are writing to inform you about an outstanding premium payment on your insurance policy.' :
+        config.tone === 'urgent' ?
+          'This is an urgent notice regarding the outstanding premium payment on your insurance policy.' :
+          'This is a formal legal notice (Mise en Demeure) regarding the outstanding premium payment on your insurance policy.'
+    }
 
 Please find attached your ${config.title} for Policy No. ${recipient.policyNo}.
 
-Important Information:
-- Please review the attached notice carefully
-- Payment can be made via bank transfer or QR code
-- Contact us immediately if you have any questions
-${config.urgency === 'critical' ? '- Legal action may be initiated if payment is not received' : ''}
+For your convenience, you may settle payments instantly via the QR Code included in your notice using mobile banking apps such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.
 
-Payment Methods:
-• Bank Transfer: Maubank (143100007063), MCB (000444155708), SBM (61030100056840)
-• QR Code Payment: Use any mobile banking app
-• Contact: 602 3000 or giarrearsrecovery@nicl.mu
-
-${config.urgency === 'critical' ? 
-  '⚠️ URGENT: This is a formal legal notice. Failure to respond may result in legal proceedings.' : ''
-}
+Quick Payment via QR Code:
+- Scan the QR code in your attached notice to pay instantly
+- Powered by MauCAS and ZwennPay payment system
+- Contact: 602 3000 or giarrearsrecovery@nicl.mu
 
 Thank you for your prompt attention to this matter.
 

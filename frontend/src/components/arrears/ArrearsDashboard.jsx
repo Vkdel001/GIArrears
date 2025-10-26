@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Upload, FileText, Merge, Mail, LogOut, User, Download, BarChart3 } from 'lucide-react';
+import { AlertTriangle, Upload, FileText, Merge, Mail, LogOut, User, Download, BarChart3, CheckCircle, X, Clock } from 'lucide-react';
 import FileUpload from '../shared/FileUpload';
 import ProcessStep from '../shared/ProcessStep';
 import FileList from '../shared/FileList';
@@ -13,10 +13,10 @@ const ArrearsDashboard = ({ user, onLogout }) => {
   
   // Process states
   const [processes, setProcesses] = useState({
-    upload: { status: 'pending', progress: 0 },
-    generate: { status: 'pending', progress: 0 },
-    merge: { status: 'pending', progress: 0 },
-    email: { status: 'pending', progress: 0 }
+    upload: { status: 'pending', progress: 0, message: '', details: {} },
+    generate: { status: 'pending', progress: 0, message: '', details: {} },
+    merge: { status: 'pending', progress: 0, message: '', details: {} },
+    email: { status: 'pending', progress: 0, message: '', details: {} }
   });
   
   const [files, setFiles] = useState({
@@ -32,31 +32,69 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     MED: { individual: 0, merged: 0 }
   });
 
+  // Upload confirmation modal state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadModalData, setUploadModalData] = useState(null);
+
+  // Completion modal states
+  const [showGenerateCompleteModal, setShowGenerateCompleteModal] = useState(false);
+  const [showMergeCompleteModal, setShowMergeCompleteModal] = useState(false);
+  const [completionData, setCompletionData] = useState(null);
+
+  // Existing data notice
+  const [showExistingDataNotice, setShowExistingDataNotice] = useState(false);
+  const [existingDataInfo, setExistingDataInfo] = useState(null);
+  const [hasHandledInitialLoad, setHasHandledInitialLoad] = useState(false);
+
+  // Email confirmation modal
+  const [showEmailConfirmModal, setShowEmailConfirmModal] = useState(false);
+  const [emailConfirmText, setEmailConfirmText] = useState('');
+  const requiredEmailText = 'Send emails to customers';
+
   // Check existing workflow status on component mount
   useEffect(() => {
-    checkWorkflowStatus();
+    checkWorkflowStatus(false, true); // isInitialLoad = true
     loadFiles();
   }, []);
 
-  const checkWorkflowStatus = async () => {
+  const checkWorkflowStatus = async (autoLoad = false, isInitialLoad = false) => {
     try {
       const response = await arrearsAPI.getStatus();
       const status = response.data;
       
-      // Update processes based on existing files
-      setProcesses(prev => ({
-        ...prev,
-        upload: { status: status.upload ? 'completed' : 'pending', progress: status.upload ? 100 : 0 },
-        generate: { status: status.generate ? 'completed' : 'pending', progress: status.generate ? 100 : 0 },
-        merge: { status: status.merge ? 'completed' : 'pending', progress: status.merge ? 100 : 0 }
-      }));
+      // Check if there's existing data
+      const hasExistingData = status.upload || status.generate || status.merge;
       
-      // Set current step and recovery stats
-      setCurrentStep(status.currentStep);
-      setRecoveryStats(status.recoveryStats || {});
+      // Only show the modal on initial load and if we haven't handled it yet
+      if (hasExistingData && !autoLoad && isInitialLoad && !hasHandledInitialLoad) {
+        // Show notice about existing data instead of auto-loading
+        setExistingDataInfo(status);
+        setShowExistingDataNotice(true);
+        setHasHandledInitialLoad(true);
+        return;
+      }
       
-      if (status.upload) {
-        setUploadedFile({ name: 'Extracted_Arrears_Data.xlsx' });
+      if (autoLoad || hasExistingData) {
+        // Update processes based on existing files
+        setProcesses(prev => ({
+          ...prev,
+          upload: { status: status.upload ? 'completed' : 'pending', progress: status.upload ? 100 : 0 },
+          generate: { status: status.generate ? 'completed' : 'pending', progress: status.generate ? 100 : 0 },
+          merge: { status: status.merge ? 'completed' : 'pending', progress: status.merge ? 100 : 0 }
+        }));
+        
+        // Set current step and recovery stats
+        setCurrentStep(status.currentStep);
+        setRecoveryStats(status.recoveryStats || {});
+        
+        if (status.upload) {
+          setUploadedFile({ name: 'Extracted_Arrears_Data.xlsx' });
+        }
+      }
+      
+      // Mark that we've handled the initial load (even if no existing data)
+      if (isInitialLoad) {
+        setHasHandledInitialLoad(true);
       }
       
     } catch (error) {
@@ -64,11 +102,30 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     }
   };
 
-  const updateProcess = (step, status, progress = 0) => {
+  const updateProcess = (step, status, progress = 0, message = '', details = {}, showModal = false) => {
     setProcesses(prev => ({
       ...prev,
-      [step]: { status, progress }
+      [step]: { status, progress, message, details }
     }));
+
+    // Show completion modals only when explicitly requested
+    if (status === 'completed' && showModal) {
+      if (step === 'generate') {
+        setCompletionData({
+          type: 'generate',
+          message: message,
+          details: details
+        });
+        setShowGenerateCompleteModal(true);
+      } else if (step === 'merge') {
+        setCompletionData({
+          type: 'merge',
+          message: message,
+          details: details
+        });
+        setShowMergeCompleteModal(true);
+      }
+    }
   };
 
   // Poll for progress updates
@@ -78,7 +135,18 @@ const ArrearsDashboard = ({ user, onLogout }) => {
       const progress = response.data;
       
       if (progress.step && progress.status !== 'idle') {
-        updateProcess(progress.step, progress.status, progress.progress);
+        // Check if this is a transition from running to completed
+        const currentStatus = processes[progress.step]?.status;
+        const shouldShowModal = progress.status === 'completed' && currentStatus === 'running';
+        
+        updateProcess(
+          progress.step, 
+          progress.status, 
+          progress.progress, 
+          progress.message || '', 
+          progress.details || {},
+          shouldShowModal
+        );
       }
     } catch (error) {
       console.error('Failed to get progress:', error);
@@ -100,14 +168,22 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     
     try {
       const response = await arrearsAPI.uploadExcel(file);
-      setUploadedFile(file);
-      setRecordCount(response.data.recordCount || 0);
-      setRecoveryDistribution(response.data.recoveryDistribution || {});
-      updateProcess('upload', 'completed', 100);
-      setCurrentStep(2);
+      const recordCount = response.data.recordCount || 0;
+      const recoveryDistribution = response.data.recoveryDistribution || {};
+      
+      // Show confirmation modal with upload details
+      setUploadModalData({
+        file,
+        recordCount,
+        recoveryDistribution
+      });
+      setShowUploadModal(true);
     } catch (error) {
       updateProcess('upload', 'error', 0);
       console.error('Upload failed:', error);
+      
+      // Show error alert
+      alert(`Upload failed: ${error.response?.data?.error || error.message}`);
     }
   };
 
@@ -116,10 +192,11 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     
     try {
       await arrearsAPI.generateLetters();
-      updateProcess('generate', 'completed', 100);
+      // Show completion modal when generation actually completes
+      updateProcess('generate', 'completed', 100, 'Letters generated successfully', {}, true);
       setCurrentStep(3);
       // Refresh status to get updated stats
-      setTimeout(checkWorkflowStatus, 1000);
+      setTimeout(() => checkWorkflowStatus(true), 1000);
     } catch (error) {
       updateProcess('generate', 'error', 0);
       console.error('Letter generation failed:', error);
@@ -131,12 +208,13 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     
     try {
       await arrearsAPI.mergeLetters();
-      updateProcess('merge', 'completed', 100);
+      // Show completion modal when merge actually completes
+      updateProcess('merge', 'completed', 100, 'Letters merged successfully', {}, true);
       setCurrentStep(4);
       // Refresh files and status
       setTimeout(() => {
         loadFiles();
-        checkWorkflowStatus();
+        checkWorkflowStatus(true);
       }, 1000);
     } catch (error) {
       updateProcess('merge', 'error', 0);
@@ -144,15 +222,31 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     }
   };
 
-  const handleSendEmails = async () => {
-    updateProcess('email', 'running', 0);
-    
-    try {
-      await arrearsAPI.sendEmails({ recoveryTypes: ['all'] });
-      updateProcess('email', 'completed', 100);
-    } catch (error) {
-      updateProcess('email', 'error', 0);
-      console.error('Email sending failed:', error);
+  const handleSendEmails = () => {
+    // Show confirmation modal instead of directly sending
+    setEmailConfirmText('');
+    setShowEmailConfirmModal(true);
+  };
+
+  const handleEmailConfirmCancel = () => {
+    setShowEmailConfirmModal(false);
+    setEmailConfirmText('');
+  };
+
+  const handleEmailConfirmSend = async () => {
+    if (emailConfirmText.trim() === requiredEmailText) {
+      setShowEmailConfirmModal(false);
+      setEmailConfirmText('');
+      
+      updateProcess('email', 'running', 0);
+      
+      try {
+        await arrearsAPI.sendEmails({ recoveryTypes: ['all'] });
+        updateProcess('email', 'completed', 100);
+      } catch (error) {
+        updateProcess('email', 'error', 0);
+        console.error('Email sending failed:', error);
+      }
     }
   };
 
@@ -182,6 +276,92 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     arrearsAPI.downloadAllIndividual(type);
   };
 
+  // Upload modal handlers
+  const handleUploadConfirm = () => {
+    if (uploadModalData) {
+      setUploadedFile(uploadModalData.file);
+      setRecordCount(uploadModalData.recordCount);
+      setRecoveryDistribution(uploadModalData.recoveryDistribution);
+      updateProcess('upload', 'completed', 100);
+      setCurrentStep(2);
+    }
+    setShowUploadModal(false);
+    setUploadModalData(null);
+  };
+
+  const handleUploadCancel = () => {
+    updateProcess('upload', 'pending', 0);
+    setShowUploadModal(false);
+    setUploadModalData(null);
+  };
+
+  // Reset/Clear workflow
+  const handleResetWorkflow = () => {
+    if (window.confirm('Are you sure you want to clear all progress and start fresh? This will reset all steps.')) {
+      // Reset all state
+      setCurrentStep(1);
+      setUploadedFile(null);
+      setRecordCount(0);
+      setRecoveryDistribution({});
+      setProcesses({
+        upload: { status: 'pending', progress: 0, message: '', details: {} },
+        generate: { status: 'pending', progress: 0, message: '', details: {} },
+        merge: { status: 'pending', progress: 0, message: '', details: {} },
+        email: { status: 'pending', progress: 0, message: '', details: {} }
+      });
+      setRecoveryStats({
+        L0: { individual: 0, merged: 0 },
+        L1: { individual: 0, merged: 0 },
+        L2: { individual: 0, merged: 0 },
+        MED: { individual: 0, merged: 0 }
+      });
+      setFiles({
+        individual: { L0: [], L1: [], L2: [], MED: [] },
+        merged: { L0: [], L1: [], L2: [], MED: [] }
+      });
+      
+      // Close any open modals
+      setShowUploadModal(false);
+      setShowGenerateCompleteModal(false);
+      setShowMergeCompleteModal(false);
+      setShowExistingDataNotice(false);
+      setShowEmailConfirmModal(false);
+      setUploadModalData(null);
+      setCompletionData(null);
+      setExistingDataInfo(null);
+      setEmailConfirmText('');
+      
+      // Reset the initial load flag so the modal can show again if needed
+      setHasHandledInitialLoad(false);
+      
+      console.log('🔄 Workflow reset - starting fresh');
+    }
+  };
+
+  // Existing data handlers
+  const handleResumeExistingWork = () => {
+    if (existingDataInfo) {
+      checkWorkflowStatus(true); // Auto-load the existing status
+      setShowExistingDataNotice(false);
+      setExistingDataInfo(null);
+    }
+  };
+
+  const handleStartFresh = () => {
+    setShowExistingDataNotice(false);
+    setExistingDataInfo(null);
+    // Keep the clean state (don't load existing data)
+  };
+
+  // Helper function to count total individual PDFs
+  const getTotalIndividualPDFs = () => {
+    return Object.values(recoveryStats).reduce((total, stats) => total + stats.individual, 0);
+  };
+
+  const getTotalMergedPDFs = () => {
+    return Object.values(recoveryStats).reduce((total, stats) => total + stats.merged, 0);
+  };
+
   // Recovery type configurations
   const recoveryTypeConfig = {
     L0: { name: 'Level 0', color: '#f59e0b', description: 'Initial Notice' },
@@ -207,6 +387,14 @@ const ArrearsDashboard = ({ user, onLogout }) => {
               <User size={16} />
               <span>{user}</span>
             </div>
+            <button 
+              onClick={handleResetWorkflow} 
+              className="btn btn-secondary"
+              title="Clear all progress and start fresh"
+            >
+              <X size={16} />
+              Reset
+            </button>
             <button onClick={onLogout} className="btn btn-secondary">
               <LogOut size={16} />
               Logout
@@ -313,12 +501,72 @@ const ArrearsDashboard = ({ user, onLogout }) => {
               })}
             </div>
           </div>
+          
+          {/* Enhanced Progress Display with Stopwatch */}
+          {processes.generate.status === 'running' && (
+            <div style={{ 
+              marginBottom: '16px', 
+              padding: '16px', 
+              background: '#f0f9ff', 
+              borderRadius: '8px',
+              border: '1px solid #bfdbfe'
+            }}>
+              {/* Stopwatch Display */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                marginBottom: '12px',
+                padding: '8px',
+                background: '#1e40af',
+                borderRadius: '6px',
+                color: 'white'
+              }}>
+                <Clock size={20} style={{ marginRight: '8px' }} />
+                <span style={{ 
+                  fontSize: '24px', 
+                  fontWeight: 'bold', 
+                  fontFamily: 'monospace',
+                  letterSpacing: '2px'
+                }}>
+                  {processes.generate.details?.elapsed || '00:00'}
+                </span>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#1e40af' }}>
+                  {processes.generate.message || 'Generating letters...'}
+                </span>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                  {processes.generate.progress}%
+                </span>
+              </div>
+              
+              {/* Estimated Time */}
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#6b7280', 
+                textAlign: 'center',
+                fontStyle: 'italic'
+              }}>
+                Estimated time: 10-20 minutes for large files
+              </div>
+            </div>
+          )}
+          
           <button 
             onClick={handleGenerateLetters}
             className="btn btn-primary"
-            disabled={currentStep < 2 || processes.generate.status === 'running'}
+            disabled={
+              currentStep < 2 || 
+              processes.generate.status === 'running' || 
+              (processes.generate.status === 'completed' && getTotalIndividualPDFs() > 0) ||
+              processes.merge.status === 'running'
+            }
           >
-            {processes.generate.status === 'running' ? 'Generating Letters...' : 'Generate Letters'}
+            {processes.generate.status === 'running' ? 'Generating PDFs...' : 
+             (processes.generate.status === 'completed' && getTotalIndividualPDFs() > 0) ? 'PDFs Generated ✓' : 
+             'Start PDF Generation'}
           </button>
         </ProcessStep>
 
@@ -357,12 +605,73 @@ const ArrearsDashboard = ({ user, onLogout }) => {
               })}
             </div>
           </div>
+          
+          {/* Enhanced Progress Display with Stopwatch for Merge */}
+          {processes.merge.status === 'running' && (
+            <div style={{ 
+              marginBottom: '16px', 
+              padding: '16px', 
+              background: '#f0fdf4', 
+              borderRadius: '8px',
+              border: '1px solid #bbf7d0'
+            }}>
+              {/* Stopwatch Display */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                marginBottom: '12px',
+                padding: '8px',
+                background: '#16a34a',
+                borderRadius: '6px',
+                color: 'white'
+              }}>
+                <Clock size={20} style={{ marginRight: '8px' }} />
+                <span style={{ 
+                  fontSize: '24px', 
+                  fontWeight: 'bold', 
+                  fontFamily: 'monospace',
+                  letterSpacing: '2px'
+                }}>
+                  {processes.merge.details?.elapsed || '00:00'}
+                </span>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#16a34a' }}>
+                  {processes.merge.message || 'Merging PDFs...'}
+                </span>
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                  {processes.merge.progress}%
+                </span>
+              </div>
+              
+              {/* Estimated Time */}
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#6b7280', 
+                textAlign: 'center',
+                fontStyle: 'italic'
+              }}>
+                Estimated time: 3-5 minutes for large files
+              </div>
+            </div>
+          )}
+          
           <button 
             onClick={handleMergeLetters}
             className="btn btn-primary"
-            disabled={currentStep < 3 || processes.merge.status === 'running'}
+            disabled={
+              currentStep < 3 || 
+              getTotalIndividualPDFs() === 0 ||
+              processes.merge.status === 'running' || 
+              (processes.merge.status === 'completed' && getTotalMergedPDFs() > 0) ||
+              processes.generate.status === 'running'
+            }
           >
-            {processes.merge.status === 'running' ? 'Merging Letters...' : 'Merge Letters'}
+            {processes.merge.status === 'running' ? 'Merging PDFs...' : 
+             (processes.merge.status === 'completed' && getTotalMergedPDFs() > 0) ? 'PDFs Merged ✓' : 
+             'Start PDF Merge'}
           </button>
         </ProcessStep>
 
@@ -460,6 +769,478 @@ const ArrearsDashboard = ({ user, onLogout }) => {
                   />
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Confirmation Modal */}
+      {showUploadModal && uploadModalData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '500px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <CheckCircle size={32} style={{ color: '#16a34a' }} />
+              <div>
+                <h3 style={{ margin: 0, color: '#16a34a', fontSize: '20px' }}>Upload Successful!</h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  {uploadModalData.file.name}
+                </p>
+              </div>
+            </div>
+
+            {/* Upload Statistics */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ 
+                padding: '16px', 
+                background: '#f0fdf4', 
+                borderRadius: '8px',
+                border: '1px solid #bbf7d0',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <BarChart3 size={20} style={{ color: '#16a34a' }} />
+                  <span style={{ fontWeight: '600', color: '#16a34a' }}>
+                    Total Records: {uploadModalData.recordCount.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Recovery Distribution */}
+              <h4 style={{ margin: '0 0 12px 0', color: 'var(--primary-color)' }}>Recovery Action Distribution:</h4>
+              <div style={{ display: 'grid', gap: '8px' }}>
+                {Object.entries(uploadModalData.recoveryDistribution).map(([type, count]) => {
+                  const config = recoveryTypeConfig[type] || { name: type, color: '#6b7280', description: 'Other' };
+                  return (
+                    <div key={type} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      background: `${config.color}15`,
+                      borderRadius: '6px',
+                      border: `1px solid ${config.color}30`
+                    }}>
+                      <span style={{ color: config.color, fontWeight: '500' }}>
+                        {config.name} ({config.description})
+                      </span>
+                      <span style={{ color: config.color, fontWeight: '600' }}>
+                        {count.toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Confirmation Message */}
+            <div style={{ 
+              padding: '12px', 
+              background: '#fffbeb', 
+              borderRadius: '6px',
+              border: '1px solid #fed7aa',
+              marginBottom: '24px'
+            }}>
+              <p style={{ margin: 0, color: '#92400e', fontSize: '14px' }}>
+                Click <strong>Proceed</strong> to continue with letter generation, or <strong>Cancel</strong> to upload a different file.
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleUploadCancel}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <X size={16} />
+                Cancel
+              </button>
+              <button
+                onClick={handleUploadConfirm}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} />
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Complete Modal */}
+      {showGenerateCompleteModal && completionData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '450px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <CheckCircle size={32} style={{ color: '#16a34a' }} />
+              <div>
+                <h3 style={{ margin: 0, color: '#16a34a', fontSize: '20px' }}>Letters Generated!</h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  PDF generation completed successfully
+                </p>
+              </div>
+            </div>
+
+            {/* Completion Message */}
+            <div style={{ 
+              padding: '16px', 
+              background: '#f0fdf4', 
+              borderRadius: '8px',
+              border: '1px solid #bbf7d0',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: 0, color: '#16a34a', fontSize: '14px', textAlign: 'center' }}>
+                {completionData.message}
+              </p>
+            </div>
+
+            {/* Next Steps */}
+            <div style={{ 
+              padding: '12px', 
+              background: '#fffbeb', 
+              borderRadius: '6px',
+              border: '1px solid #fed7aa',
+              marginBottom: '24px'
+            }}>
+              <p style={{ margin: 0, color: '#92400e', fontSize: '14px' }}>
+                <strong>Next Step:</strong> You can now merge the letters by recovery type for batch printing.
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowGenerateCompleteModal(false);
+                  setTimeout(() => checkWorkflowStatus(true), 500);
+                }}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} />
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Merge Complete Modal */}
+      {showMergeCompleteModal && completionData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '450px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <CheckCircle size={32} style={{ color: '#16a34a' }} />
+              <div>
+                <h3 style={{ margin: 0, color: '#16a34a', fontSize: '20px' }}>Letters Merged!</h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  PDF merging completed successfully
+                </p>
+              </div>
+            </div>
+
+            {/* Completion Message */}
+            <div style={{ 
+              padding: '16px', 
+              background: '#f0fdf4', 
+              borderRadius: '8px',
+              border: '1px solid #bbf7d0',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: 0, color: '#16a34a', fontSize: '14px', textAlign: 'center' }}>
+                {completionData.message}
+              </p>
+            </div>
+
+            {/* Next Steps */}
+            <div style={{ 
+              padding: '12px', 
+              background: '#fffbeb', 
+              borderRadius: '6px',
+              border: '1px solid #fed7aa',
+              marginBottom: '24px'
+            }}>
+              <p style={{ margin: 0, color: '#92400e', fontSize: '14px' }}>
+                <strong>Ready for Download:</strong> Your merged PDFs are now available for download and printing.
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowMergeCompleteModal(false);
+                  setTimeout(() => {
+                    loadFiles();
+                    checkWorkflowStatus(true);
+                  }, 500);
+                }}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} />
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Existing Data Notice Modal */}
+      {showExistingDataNotice && existingDataInfo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <AlertTriangle size={32} style={{ color: '#f59e0b' }} />
+              <div>
+                <h3 style={{ margin: 0, color: '#f59e0b', fontSize: '20px' }}>Existing Work Found</h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  Previous workflow data detected
+                </p>
+              </div>
+            </div>
+
+            {/* Existing Data Summary */}
+            <div style={{ 
+              padding: '16px', 
+              background: '#fffbeb', 
+              borderRadius: '8px',
+              border: '1px solid #fed7aa',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: '0 0 8px 0', color: '#92400e', fontSize: '14px', fontWeight: '500' }}>
+                Found previous work:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '20px', color: '#92400e', fontSize: '14px' }}>
+                {existingDataInfo.upload && <li>✅ Excel file uploaded</li>}
+                {existingDataInfo.generate && <li>✅ Letters generated</li>}
+                {existingDataInfo.merge && <li>✅ Letters merged</li>}
+              </ul>
+            </div>
+
+            {/* Options */}
+            <div style={{ 
+              padding: '12px', 
+              background: '#f0f9ff', 
+              borderRadius: '6px',
+              border: '1px solid #bfdbfe',
+              marginBottom: '24px'
+            }}>
+              <p style={{ margin: 0, color: '#1e40af', fontSize: '14px' }}>
+                Would you like to <strong>resume</strong> your previous work or <strong>start fresh</strong>?
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleStartFresh}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <X size={16} />
+                Start Fresh
+              </button>
+              <button
+                onClick={handleResumeExistingWork}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} />
+                Resume Work
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Confirmation Modal */}
+      {showEmailConfirmModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <AlertTriangle size={32} style={{ color: '#dc2626' }} />
+              <div>
+                <h3 style={{ margin: 0, color: '#dc2626', fontSize: '20px' }}>Confirm Email Sending</h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  This action will send emails to customers
+                </p>
+              </div>
+            </div>
+
+            {/* Warning Message */}
+            <div style={{ 
+              padding: '16px', 
+              background: '#fef2f2', 
+              borderRadius: '8px',
+              border: '1px solid #fecaca',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: '0 0 8px 0', color: '#dc2626', fontSize: '14px', fontWeight: '500' }}>
+                ⚠️ WARNING: This will send arrears letters to customers via email.
+              </p>
+              <p style={{ margin: 0, color: '#dc2626', fontSize: '14px' }}>
+                This action cannot be undone. Please ensure all letters are correct before proceeding.
+              </p>
+            </div>
+
+            {/* Confirmation Input */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '8px', 
+                color: '#374151', 
+                fontSize: '14px', 
+                fontWeight: '500' 
+              }}>
+                To confirm, please type: <strong>"{requiredEmailText}"</strong>
+              </label>
+              <input
+                type="text"
+                value={emailConfirmText}
+                onChange={(e) => setEmailConfirmText(e.target.value)}
+                placeholder={requiredEmailText}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  borderColor: emailConfirmText.trim() === requiredEmailText ? '#10b981' : '#d1d5db'
+                }}
+                autoFocus
+              />
+              {emailConfirmText.trim() !== '' && emailConfirmText.trim() !== requiredEmailText && (
+                <p style={{ margin: '4px 0 0 0', color: '#dc2626', fontSize: '12px' }}>
+                  Text does not match. Please type exactly: "{requiredEmailText}"
+                </p>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleEmailConfirmCancel}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <X size={16} />
+                Cancel
+              </button>
+              <button
+                onClick={handleEmailConfirmSend}
+                className="btn btn-primary"
+                disabled={emailConfirmText.trim() !== requiredEmailText}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  opacity: emailConfirmText.trim() !== requiredEmailText ? 0.5 : 1
+                }}
+              >
+                <Mail size={16} />
+                Send Emails
+              </button>
             </div>
           </div>
         </div>

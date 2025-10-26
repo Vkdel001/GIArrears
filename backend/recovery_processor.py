@@ -74,31 +74,44 @@ def main():
     # Clean up existing PDFs first
     cleanup_output_folders()
     
-    # Read the main Excel file
+    # Read the main Excel file - try multiple locations
     excel_filename = "Extracted_Arrears_Data.xlsx"
+    excel_paths = [
+        excel_filename,  # Current directory (primary)
+        os.path.join("uploads", "arrears", excel_filename),  # Uploads folder (fallback)
+    ]
     
-    try:
-        df = pd.read_excel(excel_filename, engine='openpyxl')
-        print(f"✅ Excel file loaded successfully with {len(df)} rows")
-        print(f"📋 Available columns: {list(df.columns)}")
-        
-        if len(df) == 0:
-            print("⚠️ Excel file is empty")
-            sys.exit(1)
-        
-        # Add COMMENTS column if it doesn't exist
-        if 'COMMENTS' not in df.columns:
-            df['COMMENTS'] = ''
-            print("📝 Added COMMENTS column to Excel file")
-        else:
-            print("📝 COMMENTS column already exists")
-            
-    except FileNotFoundError:
-        print(f"❌ Excel file '{excel_filename}' not found in the current directory")
+    df = None
+    used_path = None
+    
+    for excel_path in excel_paths:
+        try:
+            if os.path.exists(excel_path):
+                df = pd.read_excel(excel_path, engine='openpyxl')
+                used_path = excel_path
+                print(f"✅ Excel file loaded successfully from {excel_path} with {len(df)} rows")
+                print(f"📋 Available columns: {list(df.columns)}")
+                break
+        except Exception as e:
+            print(f"⚠️ Could not read from {excel_path}: {str(e)}")
+            continue
+    
+    if df is None:
+        print(f"❌ Excel file '{excel_filename}' not found in any expected location:")
+        for path in excel_paths:
+            print(f"   - {path}")
         sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error reading Excel file: {str(e)}")
+    
+    if len(df) == 0:
+        print("⚠️ Excel file is empty")
         sys.exit(1)
+    
+    # Add COMMENTS column if it doesn't exist
+    if 'COMMENTS' not in df.columns:
+        df['COMMENTS'] = ''
+        print("📝 Added COMMENTS column to Excel file")
+    else:
+        print("📝 COMMENTS column already exists")
     
     # Check if Recovery_action column exists
     if 'Recovery_action' not in df.columns:
@@ -121,12 +134,27 @@ def main():
         'MED': {'script': 'GI_MED_Arrears.py', 'temp_file': 'temp_MED.xlsx'}
     }
     
+    # Calculate total records for overall progress
+    total_records = sum(len(df[df['Recovery_action'] == action]) for action in action_mapping.keys())
+    print(f"📊 Total records to process: {total_records}")
+    processed_so_far = 0
+    
+    # Track overall progress across all recovery types
+    def update_overall_progress(processed, total, stage_name=""):
+        percentage = (processed / total * 100) if total > 0 else 0
+        print(f"[PROGRESS] Processing row {processed} of {total} ({percentage:.1f}%)")
+        if stage_name:
+            print(f"📊 Overall progress: {processed}/{total} records processed ({percentage:.1f}%) - {stage_name}")
+    
     # Process each recovery action type
     processed_dataframes = []
     processing_summary = {}
     
     print(f"\n🔄 Processing Recovery Actions:")
     print("-" * 40)
+    
+    # Initial progress update
+    update_overall_progress(0, total_records, "Starting processing")
     
     for action, config in action_mapping.items():
         # Filter data for this recovery action
@@ -137,6 +165,7 @@ def main():
             continue
         
         print(f"\n📋 Processing {action}: {len(action_df)} records")
+        print(f"[STAGE] Starting {action} letters processing")
         
         # Create temporary Excel file for this action
         temp_filename = config['temp_file']
@@ -187,6 +216,10 @@ def main():
                     }
                     print(f"   📊 Generated {success_count} letters out of {len(updated_df)} records")
                     
+                    # Update overall progress
+                    processed_so_far += len(updated_df)
+                    update_overall_progress(processed_so_far, total_records, f"{action} completed")
+                    
                 except Exception as e:
                     print(f"   ⚠️  Warning: Could not read updated file {temp_filename}: {str(e)}")
                     processed_dataframes.append(action_df)  # Use original data
@@ -197,14 +230,27 @@ def main():
                 processed_dataframes.append(action_df)  # Use original data
                 processing_summary[action] = {'status': 'Failed', 'processed': 0}
                 
+                # Update overall progress even for failed cases
+                processed_so_far += len(action_df)
+                update_overall_progress(processed_so_far, total_records, f"{action} failed")
+                
         except subprocess.TimeoutExpired:
             print(f"   ⏰ {script_name} timed out after 5 minutes")
             processed_dataframes.append(action_df)
             processing_summary[action] = {'status': 'Timeout', 'processed': 0}
+            
+            # Update overall progress for timeout
+            processed_so_far += len(action_df)
+            update_overall_progress(processed_so_far, total_records, f"{action} timed out")
+            
         except Exception as e:
             print(f"   ❌ Error executing {script_name}: {str(e)}")
             processed_dataframes.append(action_df)
             processing_summary[action] = {'status': 'Error', 'processed': 0}
+            
+            # Update overall progress for errors
+            processed_so_far += len(action_df)
+            update_overall_progress(processed_so_far, total_records, f"{action} error")
         
         # Clean up temporary file
         try:
@@ -222,9 +268,10 @@ def main():
             # Combine all processed dataframes
             consolidated_df = pd.concat(processed_dataframes, ignore_index=True)
             
-            # Save back to main Excel file
-            consolidated_df.to_excel(excel_filename, index=False, engine='openpyxl')
-            print(f"✅ Updated main Excel file with processing results")
+            # Save back to main Excel file (use the path we found the file at)
+            save_path = used_path if used_path else excel_filename
+            consolidated_df.to_excel(save_path, index=False, engine='openpyxl')
+            print(f"✅ Updated main Excel file with processing results at {save_path}")
             
         except Exception as e:
             print(f"❌ Error consolidating results: {str(e)}")
