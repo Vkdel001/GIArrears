@@ -17,8 +17,8 @@ const AUTH_CONFIG = {
     teamName: "Health Insurance Team"
   },
   arrears: {
-    authorizedEmails: ["collections@nicl.mu", "giarrearsrecovery@nicl.mu", "vikas.khanna@zwennpay.com"],
-    superPassword: "NICLARREARS@2025",
+    authorizedEmails: ["collections@nicl.mu", "giarrearsrecovery@nicl.mu", "mraheeman@nicl.mu", "mhasgarally@nicl.mu", "vikas.khanna@zwennpay.com"],
+    superPassword: "NICG@2025",
     teamName: "Collections & Arrears Team"
   }
 };
@@ -28,15 +28,22 @@ const otpStore = new Map();
 
 // Helper function to detect team from email
 const detectTeam = (email) => {
+  console.log(`🔍 Checking email: "${email}"`);
+  console.log(`📋 Arrears authorized emails:`, AUTH_CONFIG.arrears.authorizedEmails);
+
   if (AUTH_CONFIG.motor.authorizedEmails.includes(email)) {
+    console.log(`✅ Found in motor team`);
     return 'motor';
   }
   if (AUTH_CONFIG.health.authorizedEmails.includes(email)) {
+    console.log(`✅ Found in health team`);
     return 'health';
   }
   if (AUTH_CONFIG.arrears.authorizedEmails.includes(email)) {
+    console.log(`✅ Found in arrears team`);
     return 'arrears';
   }
+  console.log(`❌ Email not found in any team`);
   return null;
 };
 
@@ -54,14 +61,20 @@ const generateOTP = () => {
 // Send OTP endpoint
 router.post('/send-otp', async (req, res) => {
   try {
+    console.log(`📧 OTP request received for email: "${req.body.email}"`);
     const { email } = req.body;
 
     if (!email) {
+      console.log(`❌ No email provided`);
       return res.status(400).json({ error: 'Email is required' });
     }
 
+    console.log(`🔍 Calling detectTeam for: "${email}"`);
     const team = detectTeam(email);
+    console.log(`📋 detectTeam result: ${team}`);
+
     if (!team) {
+      console.log(`❌ Email "${email}" not authorized for any team`);
       return res.status(403).json({ error: 'Email not authorized for any team' });
     }
 
@@ -85,7 +98,7 @@ router.post('/send-otp', async (req, res) => {
         const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
 
         sendSmtpEmail.sender = {
-          name: 'NICL Renewal System',
+          name: 'NICG Arrears OTP',
           email: 'noreply@niclmauritius.site'
         };
 
@@ -94,7 +107,7 @@ router.post('/send-otp', async (req, res) => {
           name: email.split('@')[0]
         }];
 
-        sendSmtpEmail.subject = `NICL Renewal System - OTP Verification`;
+        sendSmtpEmail.subject = `NICG Arrears OTP - Verification Code`;
 
         sendSmtpEmail.htmlContent = `
           <!DOCTYPE html>
@@ -106,8 +119,8 @@ router.post('/send-otp', async (req, res) => {
           </head>
           <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
               <div style="background: ${team === 'motor' ? '#1e40af' : team === 'health' ? '#059669' : '#dc2626'}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                  <h1 style="margin: 0; font-size: 24px;">NICL Renewal System</h1>
-                  <p style="margin: 5px 0 0 0; opacity: 0.9;">National Insurance Company Limited</p>
+                  <h1 style="margin: 0; font-size: 24px;">NICG Arrears OTP</h1>
+                  <p style="margin: 5px 0 0 0; opacity: 0.9;">NIC General Insurance Co. Ltd</p>
               </div>
               
               <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px;">
@@ -147,7 +160,7 @@ router.post('/send-otp', async (req, res) => {
         `;
 
         sendSmtpEmail.textContent = `
-NICL Renewal System - OTP Verification
+NICG Arrears OTP - Verification Code
 
 Hello,
 

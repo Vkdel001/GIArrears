@@ -62,6 +62,7 @@ const generateZwennPayQR = async (recipient) => {
     };
 
     // Call ZwennPay API
+    console.log(`🌐 Calling ZwennPay API for ${recipient.name}...`);
     const response = await fetch("https://api.zwennpay.com:9425/api/v1.0/Common/GetMerchantQR", {
       method: 'POST',
       headers: {
@@ -72,31 +73,36 @@ const generateZwennPayQR = async (recipient) => {
       timeout: 20000
     });
 
+    console.log(`📡 ZwennPay API response status: ${response.status} for ${recipient.name}`);
+
     if (response.ok) {
       const qrData = (await response.text()).trim();
+      console.log(`📄 QR data received for ${recipient.name}: ${qrData ? qrData.substring(0, 50) + '...' : 'empty'}`);
 
       if (qrData && qrData.toLowerCase() !== 'null' && qrData.toLowerCase() !== 'none') {
         // Generate QR code as base64 image
+        console.log(`🔄 Generating QR code image for ${recipient.name}...`);
         const qrCodeDataURL = await QRCode.toDataURL(qrData, {
           errorCorrectionLevel: 'L',
           type: 'image/png',
-          quality: 0.92,
-          margin: 2,
+          quality: 0.6,
+          margin: 1,
           color: {
             dark: '#000000',
             light: '#FFFFFF'
           },
-          width: 200
+          width: 150
         });
 
-        console.log(`✅ QR code generated successfully for ${recipient.name}`);
+        console.log(`✅ QR code generated successfully for ${recipient.name} (length: ${qrCodeDataURL.length})`);
         return qrCodeDataURL;
       } else {
-        console.log(`⚠️ No valid QR data received for ${recipient.name}`);
+        console.log(`⚠️ No valid QR data received for ${recipient.name}: "${qrData}"`);
         return null;
       }
     } else {
-      console.log(`❌ ZwennPay API request failed for ${recipient.name}: ${response.status}`);
+      const errorText = await response.text();
+      console.log(`❌ ZwennPay API request failed for ${recipient.name}: ${response.status} - ${errorText}`);
       return null;
     }
   } catch (error) {
@@ -163,7 +169,7 @@ const SENDER_CONFIG = {
     replyTo: 'customerservice@nicl.mu'
   },
   arrears: {
-    name: 'NICL Collections',
+    name: 'NICG Arrears',
     email: 'collections@niclmauritius.site',
     replyTo: 'giarrearsrecovery@nicl.mu'
   }
@@ -485,10 +491,14 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
       const pdfBuffer = await fs.readFile(pdfPath);
       const pdfBase64 = pdfBuffer.toString('base64');
 
-      // Generate QR code and prepare logos for L0 recovery type
-      if (recipient.recoveryType === 'L0') {
+      // Generate QR code and prepare logos for all recovery types
+      if (['L0', 'L1', 'L2', 'MED'].includes(recipient.recoveryType)) {
+        console.log(`🔄 Starting QR and logo generation for ${recipient.email} (${recipient.recoveryType})`);
+
         const qrCodeImage = await generateZwennPayQR(recipient);
         recipient.qrCodeImage = qrCodeImage;
+
+        console.log(`📊 QR code result for ${recipient.email}:`, qrCodeImage ? 'Generated successfully' : 'Failed to generate');
 
         // Load logos as base64 for direct embedding
         try {
@@ -498,11 +508,17 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
           if (await fs.pathExists(maucasLogoPath)) {
             const maucasLogoBuffer = await fs.readFile(maucasLogoPath);
             recipient.maucasLogoBase64 = `data:image/jpeg;base64,${maucasLogoBuffer.toString('base64')}`;
+            console.log(`✅ MauCAS logo loaded for ${recipient.email}`);
+          } else {
+            console.log(`❌ MauCAS logo not found at ${maucasLogoPath}`);
           }
 
           if (await fs.pathExists(zwennpayLogoPath)) {
             const zwennpayLogoBuffer = await fs.readFile(zwennpayLogoPath);
             recipient.zwennpayLogoBase64 = `data:image/jpeg;base64,${zwennpayLogoBuffer.toString('base64')}`;
+            console.log(`✅ ZwennPay logo loaded for ${recipient.email}`);
+          } else {
+            console.log(`❌ ZwennPay logo not found at ${zwennpayLogoPath}`);
           }
         } catch (logoError) {
           console.warn(`⚠️ Warning: Could not load logos for ${recipient.email}:`, logoError.message);
@@ -670,25 +686,25 @@ const createArrearsEmailContent = (recipient) => {
     L0: {
       title: 'Payment Reminder',
       urgency: 'low',
-      color: '#f59e0b',
+      color: '#1e40af',
       tone: 'friendly'
     },
     L1: {
       title: 'First Payment Notice',
       urgency: 'medium',
-      color: '#f97316',
+      color: '#1e40af',
       tone: 'formal'
     },
     L2: {
       title: 'Final Payment Notice',
       urgency: 'high',
-      color: '#dc2626',
+      color: '#1e40af',
       tone: 'urgent'
     },
     MED: {
       title: 'Legal Notice (Mise en Demeure)',
       urgency: 'critical',
-      color: '#991b1b',
+      color: '#1e40af',
       tone: 'legal'
     }
   };
@@ -701,12 +717,12 @@ const createArrearsEmailContent = (recipient) => {
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>NICL Collections - ${config.title}</title>
+        <title>NICG Arrears - ${config.title}</title>
     </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: ${config.color}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="margin: 0; font-size: 24px;">NICL Collections</h1>
-            <p style="margin: 5px 0 0 0; opacity: 0.9;">National Insurance Company Limited</p>
+            <h1 style="margin: 0; font-size: 24px;">NICG Arrears</h1>
+            <p style="margin: 5px 0 0 0; opacity: 0.9;">NIC General Insurance Co. Ltd</p>
         </div>
         
         <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px;">
@@ -726,75 +742,26 @@ const createArrearsEmailContent = (recipient) => {
             
             <p>Please find attached your <strong>${config.title}</strong> ${recipient.policyNo ? `for Policy No. <strong>${recipient.policyNo}</strong>` : ''}.</p>
             
-            <p>For your convenience, you may settle payments instantly via the QR Code shown below using mobile banking apps such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.</p>
+            <p>For your convenience, you may settle payments instantly via the QR Code shown in the attached file using mobile banking apps such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.</p>
             
-            <!-- QR Code Payment Section -->
-            <div style="background: white; padding: 20px; border-radius: 6px; border: 2px solid ${config.color}; margin: 20px 0; text-align: center;">
-                <h3 style="margin-top: 0; color: ${config.color};">💳 Quick Payment via QR Code</h3>
-                <p style="margin: 10px 0; font-size: 16px;"><strong>Scan the QR code below to pay instantly</strong></p>
-                
-                ${recipient.recoveryType === 'L0' && recipient.qrCodeImage ? `
-                <!-- MauCAS Logo (Above QR Code) -->
-                ${recipient.maucasLogoBase64 ? `
-                <div style="margin: 15px 0; text-align: center;">
-                    <img src="${recipient.maucasLogoBase64}" alt="MauCAS" style="height: 42px; width: auto; max-width: 120px;" />
-                </div>
-                ` : ''}
-                
-                <!-- QR Code Image -->
-                <div style="margin: 20px 0;">
-                    <img src="${recipient.qrCodeImage}" alt="Payment QR Code" style="width: 200px; height: 200px; border: 2px solid #ddd; border-radius: 8px;" />
-                </div>
-                
-                <!-- Company Label -->
-                <div style="margin: 10px 0;">
-                    <p style="margin: 0; font-size: 16px; font-weight: bold; color: #333;">NIC Health Insurance</p>
-                </div>
-                
-                <!-- ZwennPay Logo (Below QR Code) -->
-                ${recipient.zwennpayLogoBase64 ? `
-                <div style="margin: 15px 0; text-align: center;">
-                    <img src="${recipient.zwennpayLogoBase64}" alt="ZwennPay" style="height: 60px; width: auto; max-width: 150px;" />
-                </div>
-                ` : ''}
-                ` : `
-                <!-- For non-L0 recovery types -->
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 15px 0;">
-                    <p style="margin: 0; font-size: 14px; color: #666;">
-                        <strong>Powered by:</strong> MauCAS Payment System<br>
-                        <strong>Payment by:</strong> ZwennPay Digital Wallet
-                    </p>
-                </div>
-                `}
-                
-                <!-- Supported Apps -->
-                <div style="margin: 15px 0;">
-                    <p style="margin: 5px 0; font-size: 14px; color: #666;">
-                        <strong>Supported Mobile Banking Apps:</strong><br>
-                        Juice • MauBank WithMe • Blink • MyT Money • Other Banking Apps
-                    </p>
-                </div>
-                
-                <div style="background: #e3f2fd; padding: 10px; border-radius: 4px; margin: 15px 0;">
-                    <p style="margin: 0; font-size: 14px;">
-                        <strong>Need Help?</strong><br>
-                        📞 <strong>602 3000</strong> | 📧 <a href="mailto:giarrearsrecovery@nicl.mu" style="color: ${config.color};">giarrearsrecovery@nicl.mu</a>
-                    </p>
-                </div>
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px;">
+                    <strong>Need Help?</strong><br>
+                    📞 <strong>602 3000</strong> | 📧 <a href="mailto:giarrearsrecovery@nicl.mu" style="color: ${config.color};">giarrearsrecovery@nicl.mu</a>
+                </p>
             </div>
             
             <p>Thank you for your prompt attention to this matter.</p>
             
             <p style="margin-bottom: 0;">Best regards,<br>
-            <strong>NICL Collections Team</strong><br>
-            National Insurance Company Limited</p>
+            <strong>NIC General Insurance Co. Ltd</strong></p>
         </div>
     </body>
     </html>
   `;
 
   const text = `
-NICL Collections - ${config.title}
+NICG Arrears - ${config.title}
 
 Dear ${recipient.name || 'Valued Customer'},
 
@@ -819,8 +786,7 @@ Quick Payment via QR Code:
 Thank you for your prompt attention to this matter.
 
 Best regards,
-NICL Collections Team
-National Insurance Company Limited
+NIC General Insurance Co. Ltd
 `.trim();
 
   return { html, text };
