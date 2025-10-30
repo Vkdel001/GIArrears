@@ -2,13 +2,10 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
-// 2 hours timeout in milliseconds
-const LONG_TIMEOUT = 7200000;
-
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: LONG_TIMEOUT, // 2 hours timeout for all operations
+  // Remove global timeout to prevent conflicts with individual request timeouts
   headers: {
     'Content-Type': 'application/json',
   },
@@ -33,10 +30,10 @@ export const motorAPI = {
     });
   },
   generatePDFs: () => api.post('/api/motor/generate-pdfs', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for PDF generation
+    timeout: 7200000 // 2 hours for PDF generation - inline to survive build
   }),
   mergePDFs: () => api.post('/api/motor/merge-pdfs', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for merging
+    timeout: 7200000 // 2 hours for merging - inline to survive build
   }),
   sendEmails: (emailData) => api.post('/api/motor/send-emails', emailData),
   getFiles: () => api.get('/api/motor/files'),
@@ -53,10 +50,10 @@ export const motorAPI = {
   },
   // Printer version APIs
   generatePrinterPDFs: () => api.post('/api/motor/generate-printer-pdfs', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for printer PDF generation
+    timeout: 7200000 // 2 hours for printer PDF generation - inline to survive build
   }),
   mergePrinterPDFs: () => api.post('/api/motor/merge-printer-pdfs', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for printer merging
+    timeout: 7200000 // 2 hours for printer merging - inline to survive build
   }),
   getPrinterFiles: () => api.get('/api/motor/printer-files'),
   downloadPrinterIndividual: (filename) => {
@@ -80,13 +77,13 @@ export const healthAPI = {
     });
   },
   generatePDFs: () => api.post('/api/health/generate-pdfs', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for health PDF generation
+    timeout: 7200000 // 2 hours for health PDF generation - inline to survive build
   }),
   attachForms: () => api.post('/api/health/attach-forms', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for form attachment
+    timeout: 7200000 // 2 hours for form attachment - inline to survive build
   }),
   mergeAll: () => api.post('/api/health/merge-all', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for merging all
+    timeout: 7200000 // 2 hours for merging all - inline to survive build
   }),
   sendEmails: (emailData) => api.post('/api/health/send-emails', emailData),
   getFiles: () => api.get('/api/health/files'),
@@ -113,10 +110,10 @@ export const arrearsAPI = {
     });
   },
   generateLetters: () => api.post('/api/arrears/generate-letters', {}, {
-    timeout: LONG_TIMEOUT // 2 hours for letter generation
+    timeout: 7200000 // 2 hours for letter generation - inline to survive build
   }),
   mergeLetters: () => api.post('/api/arrears/merge-letters', {}, {
-    timeout: LONG_TIMEOUT // 2 hours for merging
+    timeout: 7200000 // 2 hours for merging - inline to survive build
   }),
   sendEmails: (emailData) => api.post('/api/arrears/send-emails', emailData),
   getFiles: () => api.get('/api/arrears/files'),
