@@ -2,10 +2,13 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
+// 2 hours timeout in milliseconds
+const LONG_TIMEOUT = 7200000;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
-  timeout: 2 * 60 * 60 * 1000, // 2 hours timeout for all operations
+  timeout: LONG_TIMEOUT, // 2 hours timeout for all operations
   headers: {
     'Content-Type': 'application/json',
   },
@@ -110,10 +113,10 @@ export const arrearsAPI = {
     });
   },
   generateLetters: () => api.post('/api/arrears/generate-letters', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for letter generation
+    timeout: LONG_TIMEOUT // 2 hours for letter generation
   }),
   mergeLetters: () => api.post('/api/arrears/merge-letters', {}, {
-    timeout: 2 * 60 * 60 * 1000 // 2 hours for merging
+    timeout: LONG_TIMEOUT // 2 hours for merging
   }),
   sendEmails: (emailData) => api.post('/api/arrears/send-emails', emailData),
   getFiles: () => api.get('/api/arrears/files'),
