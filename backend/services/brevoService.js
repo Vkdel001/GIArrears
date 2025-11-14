@@ -597,13 +597,6 @@ export const sendArrearsEmails = async (recipients, recoveryTypes = ['all']) => 
         error: error.message
       });
       console.error(`❌ Failed to send arrears email to ${recipient.email}:`, error.message);
-      console.error(`❌ Full error details:`, {
-        name: error.name,
-        message: error.message,
-        status: error.status || error.statusCode,
-        response: error.response?.data || error.response?.text || 'No response data',
-        stack: error.stack?.split('\n').slice(0, 3).join('\n')
-      });
     }
   }
 

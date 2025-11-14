@@ -85,7 +85,7 @@ styles['BodyText'] = ParagraphStyle(
     fontName='Cambria',
     fontSize=10.5,
     leading=12,
-    spaceAfter=3,
+    spaceAfter=6,
     alignment=TA_JUSTIFY
 )
 
@@ -501,8 +501,8 @@ def split_mauritius_address(full_address):
 for index, row in df.iterrows():
     current_row = index + 1
     
-    # Progress indicator every 50 records
-    if current_row % 50 == 0 or current_row == 1 or current_row == len(df):
+    # Progress indicator every 25 records for more frequent updates
+    if current_row % 25 == 0 or current_row == 1 or current_row == len(df):
         print(f"[PROGRESS] Processing row {current_row} of {len(df)} ({(current_row/len(df)*100):.1f}%)")
     
     print(f"[PROCESSING] Row {current_row} of {len(df)}")
@@ -779,16 +779,19 @@ for index, row in df.iterrows():
     # Add salutation
     y_pos = add_paragraph(c, "Dear Valued Customer,", styles['BodyText'], margin, y_pos, content_width)
     
-    # Add breathing space after salutation
-    y_pos -= 8
-    
     # Add subject line
     subject_text = f"<font name='Cambria-Bold'>RE: FIRST NOTICE - ARREARS ON HEALTH INSURANCE POLICY - {pol_no}</font>"
     y_pos = add_paragraph(c, subject_text, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add main content paragraph
-    main_para = f"We are writing to inform you that, as at <font name='Cambria-Bold'>{current_date}</font>, our records indicate an amount of <font name='Cambria-Bold'>{format_currency(true_arrears)}</font> as outstanding on your general insurance Policy, as detailed below:"
-    y_pos = add_paragraph(c, main_para, styles['BodyText'], margin, y_pos, content_width)    #Create arrears table
+    # Add main content paragraphs
+    para1 = f"We are sending this as a <font name='Cambria-Bold'>third and final reminder</font> with regards to your <font name='Cambria-Bold'>aforementioned Insurance Policy</font> which, according to our records, is currently in arrears."
+    y_pos = add_paragraph(c, para1, styles['BodyText'], margin, y_pos, content_width)
+    
+    para2 = "Despite previous reminders, the arrears on your account are still unresolved, and we urge you to take immediate action to avoid the suspension or cancellation of your Policy."
+    y_pos = add_paragraph(c, para2, styles['BodyText'], margin, y_pos, content_width)
+    
+    para3 = f"The total amount of arrears, as detailed in the table below is <font name='Cambria-Bold'>{format_currency(true_arrears)}</font>."
+    y_pos = add_paragraph(c, para3, styles['BodyText'], margin, y_pos, content_width)    #Create arrears table
     table_headers = [
         Paragraph('<font name="Cambria-Bold">Cover Period</font>', styles['TableTextBold']),
         Paragraph('<font name="Cambria-Bold">Policy Number</font>', styles['TableTextBold']),
@@ -829,37 +832,18 @@ for index, row in df.iterrows():
     
     table_width, table_height = table.wrap(content_width, 0)
     table.drawOn(c, margin, y_pos - table_height)
-    y_pos -= table_height + 12
+    y_pos -= table_height + 20
     
-    # Add insurance reminder section
-    reminder_intro = "As your insurer, we wish to remind you of the following:"
-    y_pos = add_paragraph(c, reminder_intro, styles['BodyText'], margin, y_pos, content_width)
-    
-    # Add breathing space after reminder intro
-    y_pos -= 6
-    
-    # Add numbered reminder points
-    reminder_point1 = "1. Your insurance Policy provides essential protection and financial security for you and your loved ones against unforeseen circumstances."
-    y_pos = add_paragraph(c, reminder_point1, styles['BodyText'], margin, y_pos, content_width)
-    
-    reminder_point2 = "2. Regular premium payments help maintain uninterrupted coverage and ensure timely processing of any claims."
-    y_pos = add_paragraph(c, reminder_point2, styles['BodyText'], margin, y_pos, content_width)
-    
-    reminder_point3 = "3. Failure to settle outstanding arrears may lead to suspension or cancellation of your Policy."
-    y_pos = add_paragraph(c, reminder_point3, styles['BodyText'], margin, y_pos, content_width)
-    
-    # Add breathing space after point 3
-    y_pos -= 6
-    
-    # Add banking information (moved after reminder points)
-    banking_para = "We therefore kindly invite you to settle the outstanding amount through credit transfer to any of the following bank accounts: Maubank (143100007063), MCB (000444155708) or SBM (61030100056840)."
+    # Add banking information as a single paragraph
+    banking_para = "We invite you to settle the outstanding amount through credit transfer to any of the following bank accounts: Maubank (143100007063), MCB (000444155708) or SBM (61030100056840)."
     y_pos = add_paragraph(c, banking_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add breathing space after banking information
-    y_pos -= 8
+    # Add payment identification paragraph
+    payment_id_para = f"To facilitate the identification of your payment, please ensure that the Policy Number <font name='Cambria-Bold'>{pol_no}</font> is quoted in the description/remarks section when conducting the transfer."
+    y_pos = add_paragraph(c, payment_id_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add MauCAS QR Code payment option paragraph
-    qr_payment_para = "Alternatively, you may also settle payments instantly via the MauCAS QR Code (Scan to Pay) below using any mobile banking app such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications."
+    # Add MauCAS QR Code payment option paragraph (in bold)
+    qr_payment_para = "<font name='Cambria-Bold'>For your convenience, you may also settle payments instantly via the MauCAS QR Code (Scan to Pay) below using any mobile banking app such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.</font>"
     y_pos = add_paragraph(c, qr_payment_para, styles['BodyText'], margin, y_pos, content_width)
     
     # Add QR code payment section if QR was generated
@@ -873,7 +857,7 @@ for index, row in df.iterrows():
         # Calculate center position for payment elements
         page_center_x = width / 2
         
-        y_pos -= 10  # Reduced space before QR section
+        y_pos -= 20  # Space before QR section
         
         # Add MauCAS logo (centered)
         if os.path.exists("maucas2.jpeg"):
@@ -882,20 +866,20 @@ for index, row in df.iterrows():
             img_height = img_width * (img.getSize()[1] / img.getSize()[0])
             logo_x = page_center_x - (img_width / 2)
             c.drawImage(img, logo_x, y_pos - img_height, width=img_width, height=img_height)
-            y_pos -= img_height + 2
+            y_pos -= img_height + 4
         
         # Add QR code (centered)
         qr_size = 100
         qr_x = page_center_x - (qr_size / 2)
         c.drawImage(qr_filename, qr_x, y_pos - qr_size, width=qr_size, height=qr_size)
-        y_pos -= qr_size + 2
+        y_pos -= qr_size + 4
         
         # Add "NIC Health Insurance" text below QR code (centered)
         c.setFont("Cambria-Bold", 11)
         text_width = c.stringWidth("NIC Health Insurance", "Cambria-Bold", 11)
         text_x = page_center_x - (text_width / 2)
-        c.drawString(text_x, y_pos - 8, "NIC Health Insurance")
-        y_pos -= 10
+        c.drawString(text_x, y_pos - 10, "NIC Health Insurance")
+        y_pos -= 14
         
         # Add ZwennPay logo below the text (centered)
         if os.path.exists("zwennPay.jpg"):
@@ -904,30 +888,49 @@ for index, row in df.iterrows():
             zwenn_height = zwenn_width * (zwenn_img.getSize()[1] / zwenn_img.getSize()[0])
             zwenn_x = page_center_x - (zwenn_width / 2)
             c.drawImage(zwenn_img, zwenn_x, y_pos - zwenn_height, width=zwenn_width, height=zwenn_height)
-            y_pos -= zwenn_height + 10
+            y_pos -= zwenn_height + 15
         else:
             print(f"⚠️ Warning: zwennPay.jpg not found - skipping ZwennPay logo")
-            y_pos -= 10
+            y_pos -= 15
     
-    # Add contact information paragraph (moved from reminder point 4)
-    contact_para = "If you wish to discuss the arrears or would like to arrange a payment plan, please contact us on <font name='Cambria-Bold'>6023000</font> or at <font color='black'>giarrearsrecovery@nicl.mu</font>"
-    y_pos = add_paragraph(c, contact_para, styles['BodyText'], margin, y_pos, content_width)
+    # Add final notice paragraph
+    final_notice_para = f"Maintaining timely payments ensures uninterrupted coverage and access to your benefits. Please arrange to settle the overdue amount by <font name='Cambria-Bold'>{deadline_date}</font> to avoid any disruption to your Insurance Policy."
+    y_pos = add_paragraph(c, final_notice_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add breathing space before closing paragraph
-    y_pos -= 8
+    # Add disregard paragraph
+    disregard_para = "Kindly disregard this letter if you have already settled the arrears on your Policy."
+    y_pos = add_paragraph(c, disregard_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add combined disregard and appreciation paragraph
-    closing_para = "Kindly disregard this letter if you have already settled the arrears on your Policy. We appreciate your prompt attention and thank you for your continued trust in <font name='Cambria-Bold'>NIC General Insurance Co. Ltd.</font>"
-    y_pos = add_paragraph(c, closing_para, styles['BodyText'], margin, y_pos, content_width)
+    # Check if we need a new page for footer content
+    if y_pos < 200:
+        c.showPage()
+        y_pos = height - margin
     
-    # Add computer-generated letter disclaimer (centered, light grey)
-    y_pos -= 15
-    c.setFont("Cambria", 9)
-    c.setFillColor(colors.Color(0.5, 0.5, 0.5))  # Light grey color
-    disclaimer_text = "This is a computer-generated letter and does not require any signature."
-    text_width = c.stringWidth(disclaimer_text, "Cambria", 9)
-    text_x = (width - text_width) / 2  # Center horizontally
-    c.drawString(text_x, y_pos - 10, disclaimer_text)
+    y_pos -= 30  # Extra space before footer content
+    
+    # Add footer content
+    footer_para1 = "Should you have any further query regarding this letter please contact our Customer Service Team on 6023000 or email us at <font color='blue'>giarrearsrecovery@nicl.mu</font>. Alternatively, you may also liaise with your Insurance Advisor."
+    y_pos = add_paragraph(c, footer_para1, styles['BodyText'], margin, y_pos, content_width)
+    
+    footer_para2 = "Thank you for your cooperation and understanding on this matter."
+    y_pos = add_paragraph(c, footer_para2, styles['BodyText'], margin, y_pos, content_width)
+    
+    # Computer generated text - light grey, center aligned, no bold/underline
+    footer_para3_text = "This is a computer generated document and require no signature."
+    # Create centered paragraph style for grey text
+    center_grey_style = ParagraphStyle(
+        name='CenterGrey',
+        fontName='Cambria',
+        fontSize=9,
+        leading=12,
+        spaceAfter=6,
+        alignment=TA_CENTER,
+        textColor=colors.Color(0.5, 0.5, 0.5)  # Light grey
+    )
+    footer_para3 = Paragraph(footer_para3_text, center_grey_style)
+    footer_para3.wrapOn(c, content_width, height)
+    footer_para3.drawOn(c, margin, y_pos - footer_para3.height)
+    y_pos -= footer_para3.height
     
     # Save PDF
     c.save()
@@ -962,7 +965,3 @@ print(f"Skipped - Low amount (< MUR 100): {low_amount_count}")
 print(f"Skipped - No address: {no_address_count}")
 print(f"Skipped - Missing data: {missing_data_count}")
 print(f"🎉 Arrears letter generation completed!")
-
-
- 
-

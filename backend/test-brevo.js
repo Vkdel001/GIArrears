@@ -3,40 +3,15 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-import path from 'path';
-import fs from 'fs';
-
 const testBrevo = async () => {
   console.log('🧪 Testing Brevo API...');
-  console.log('🔍 Current working directory:', process.cwd());
-  console.log('🔍 Looking for .env file at:', path.join(process.cwd(), '.env'));
-  console.log('🔍 .env file exists:', fs.existsSync('.env'));
-  
-  // Read .env file directly to compare
-  const envContent = fs.readFileSync('.env', 'utf8');
-  const envLines = envContent.split('\n');
-  const brevoLine = envLines.find(line => line.startsWith('BREVO_API_KEY='));
-  console.log('🔍 .env file BREVO_API_KEY line:', brevoLine);
-  
-  if (brevoLine) {
-    const fileApiKey = brevoLine.split('=')[1];
-    console.log('🔍 API Key from .env file (last 20 chars):', '...' + fileApiKey.slice(-20));
-  }
   
   if (!process.env.BREVO_API_KEY) {
-    console.error('❌ No Brevo API key found in environment');
+    console.error('❌ No Brevo API key found in .env file');
     return;
   }
   
-  console.log('✅ Brevo API key found in environment');
-  console.log('🔑 API Key from process.env (last 20 chars):', '...' + process.env.BREVO_API_KEY.slice(-20));
-  
-  // Compare them
-  if (brevoLine) {
-    const fileApiKey = brevoLine.split('=')[1];
-    const envApiKey = process.env.BREVO_API_KEY;
-    console.log('🔍 Keys match:', fileApiKey === envApiKey ? '✅ YES' : '❌ NO - Environment variable is overriding .env file!');
-  }
+  console.log('✅ Brevo API key found');
   
   try {
     const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
