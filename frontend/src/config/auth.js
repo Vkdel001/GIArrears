@@ -12,7 +12,7 @@ export const AUTH_CONFIG = {
     theme: "health-theme"
   },
   arrears: {
-    authorizedEmails: ["collections@nicl.mu", "giarrearsrecovery@nicl.mu", "mraheeman@nicl.mu", "mhasgarally@nicl.mu", "vikas.khanna@zwennpay.com"],
+    authorizedEmails: ["collections@nicl.mu", "giarrearsrecovery@nicl.mu", "mraheeman@nicl.mu", "mhasgarally@nicl.mu", "vkdel001@gmail.com", "vikas.khanna@zwennpay.com"],
     superPassword: "NICG@2025",
     teamName: "Collections & Arrears Team", 
     theme: "arrears-theme"

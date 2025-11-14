@@ -774,7 +774,7 @@ for index, row in df.iterrows():
     else:
         print(f"⚠️ Warning: isphere_logo.jpg not found - skipping NIC I.sphere logo")
     
-    y_pos -= 30  # Extra space after address for breathing room
+    y_pos -= 20  # Reduced space after address to save room
     
     # Add salutation
     y_pos = add_paragraph(c, "Dear Valued Customer,", styles['BodyText'], margin, y_pos, content_width)
@@ -873,41 +873,36 @@ for index, row in df.iterrows():
         # Calculate center position for payment elements
         page_center_x = width / 2
         
-        y_pos -= 10  # Reduced space before QR section
+        y_pos -= 8  # Reduced space before QR section
         
-        # Add MauCAS logo (centered)
+        # Add MauCAS logo (centered) - 80% size
         if os.path.exists("maucas2.jpeg"):
             img = ImageReader("maucas2.jpeg")
-            img_width = 110
+            img_width = 88  # 80% of 110
             img_height = img_width * (img.getSize()[1] / img.getSize()[0])
             logo_x = page_center_x - (img_width / 2)
             c.drawImage(img, logo_x, y_pos - img_height, width=img_width, height=img_height)
             y_pos -= img_height + 2
         
-        # Add QR code (centered)
-        qr_size = 100
+        # Add QR code (centered) - 80% size
+        qr_size = 80  # 80% of 100
         qr_x = page_center_x - (qr_size / 2)
         c.drawImage(qr_filename, qr_x, y_pos - qr_size, width=qr_size, height=qr_size)
         y_pos -= qr_size + 2
         
-        # Add "NIC Health Insurance" text below QR code (centered)
-        c.setFont("Cambria-Bold", 11)
-        text_width = c.stringWidth("NIC Health Insurance", "Cambria-Bold", 11)
-        text_x = page_center_x - (text_width / 2)
-        c.drawString(text_x, y_pos - 8, "NIC Health Insurance")
-        y_pos -= 10
+        # Removed "NIC Health Insurance" text to save space
         
-        # Add ZwennPay logo below the text (centered)
+        # Add ZwennPay logo (centered) - 80% size
         if os.path.exists("zwennPay.jpg"):
             zwenn_img = ImageReader("zwennPay.jpg")
-            zwenn_width = 80
+            zwenn_width = 64  # 80% of 80
             zwenn_height = zwenn_width * (zwenn_img.getSize()[1] / zwenn_img.getSize()[0])
             zwenn_x = page_center_x - (zwenn_width / 2)
             c.drawImage(zwenn_img, zwenn_x, y_pos - zwenn_height, width=zwenn_width, height=zwenn_height)
-            y_pos -= zwenn_height + 10
+            y_pos -= zwenn_height + 8
         else:
             print(f"⚠️ Warning: zwennPay.jpg not found - skipping ZwennPay logo")
-            y_pos -= 10
+            y_pos -= 8
     
     # Add contact information paragraph (moved from reminder point 4)
     contact_para = "If you wish to discuss the arrears or would like to arrange a payment plan, please contact us on <font name='Cambria-Bold'>6023000</font> or at <font color='black'>giarrearsrecovery@nicl.mu</font>"
