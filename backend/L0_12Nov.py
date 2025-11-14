@@ -85,7 +85,7 @@ styles['BodyText'] = ParagraphStyle(
     fontName='Cambria',
     fontSize=10.5,
     leading=12,
-    spaceAfter=3,
+    spaceAfter=4,  # Reduced from 6 to save space
     alignment=TA_JUSTIFY
 )
 
@@ -501,8 +501,8 @@ def split_mauritius_address(full_address):
 for index, row in df.iterrows():
     current_row = index + 1
     
-    # Progress indicator every 50 records
-    if current_row % 50 == 0 or current_row == 1 or current_row == len(df):
+    # Progress indicator every 25 records for more frequent updates
+    if current_row % 25 == 0 or current_row == 1 or current_row == len(df):
         print(f"[PROGRESS] Processing row {current_row} of {len(df)} ({(current_row/len(df)*100):.1f}%)")
     
     print(f"[PROCESSING] Row {current_row} of {len(df)}")
@@ -742,7 +742,7 @@ for index, row in df.iterrows():
     date_para = Paragraph(current_date, styles['BodyText'])
     date_para.wrapOn(c, content_width, height)
     date_para.drawOn(c, margin, y_pos - date_para.height)
-    y_pos -= date_para.height + 20
+    y_pos -= date_para.height + 15
     
     # Store the starting position for address block (for I.sphere logo alignment)
     address_start_y = y_pos
@@ -774,20 +774,29 @@ for index, row in df.iterrows():
     else:
         print(f"⚠️ Warning: isphere_logo.jpg not found - skipping NIC I.sphere logo")
     
-    y_pos -= 30  # Extra space after address for breathing room
+    y_pos -= 20  # Reduced space after address for better page fit
     
-    # Add salutation
-    y_pos = add_paragraph(c, "Dear Valued Customer,", styles['BodyText'], margin, y_pos, content_width)
+    # Add salutation - use title and name if available, otherwise generic greeting
+    if ph_title and ph_title.strip() and policy_holder and policy_holder.strip():
+        salutation_text = f"Dear {ph_title.strip()} {policy_holder.strip()},"
+    else:
+        salutation_text = "Dear Valued Customer,"
     
-    # Add breathing space after salutation
-    y_pos -= 8
+    y_pos = add_paragraph(c, salutation_text, styles['BodyText'], margin, y_pos, content_width)
+    
+    # Add extra space before subject line for better visual separation
+    y_pos -= 10
     
     # Add subject line
     subject_text = f"<font name='Cambria-Bold'>RE: FIRST NOTICE - ARREARS ON HEALTH INSURANCE POLICY - {pol_no}</font>"
     y_pos = add_paragraph(c, subject_text, styles['BodyText'], margin, y_pos, content_width)
     
+    # Add opening greeting
+    greeting_para = "We hope this letter finds you well."
+    y_pos = add_paragraph(c, greeting_para, styles['BodyText'], margin, y_pos, content_width)
+    
     # Add main content paragraph
-    main_para = f"We are writing to inform you that, as at <font name='Cambria-Bold'>{current_date}</font>, our records indicate an amount of <font name='Cambria-Bold'>{format_currency(true_arrears)}</font> as outstanding on your general insurance Policy, as detailed below:"
+    main_para = f"Our records currently show an outstanding amount of <font name='Cambria-Bold'>{format_currency(true_arrears)}</font> for your Health Insurance Policy covering:"
     y_pos = add_paragraph(c, main_para, styles['BodyText'], margin, y_pos, content_width)    #Create arrears table
     table_headers = [
         Paragraph('<font name="Cambria-Bold">Cover Period</font>', styles['TableTextBold']),
@@ -829,105 +838,86 @@ for index, row in df.iterrows():
     
     table_width, table_height = table.wrap(content_width, 0)
     table.drawOn(c, margin, y_pos - table_height)
-    y_pos -= table_height + 12
+    y_pos -= table_height + 15
     
-    # Add insurance reminder section
-    reminder_intro = "As your insurer, we wish to remind you of the following:"
-    y_pos = add_paragraph(c, reminder_intro, styles['BodyText'], margin, y_pos, content_width)
-    
-    # Add breathing space after reminder intro
-    y_pos -= 6
-    
-    # Add numbered reminder points
-    reminder_point1 = "1. Your insurance Policy provides essential protection and financial security for you and your loved ones against unforeseen circumstances."
-    y_pos = add_paragraph(c, reminder_point1, styles['BodyText'], margin, y_pos, content_width)
-    
-    reminder_point2 = "2. Regular premium payments help maintain uninterrupted coverage and ensure timely processing of any claims."
-    y_pos = add_paragraph(c, reminder_point2, styles['BodyText'], margin, y_pos, content_width)
-    
-    reminder_point3 = "3. Failure to settle outstanding arrears may lead to suspension or cancellation of your Policy."
-    y_pos = add_paragraph(c, reminder_point3, styles['BodyText'], margin, y_pos, content_width)
-    
-    # Add breathing space after point 3
-    y_pos -= 6
-    
-    # Add banking information (moved after reminder points)
-    banking_para = "We therefore kindly invite you to settle the outstanding amount through credit transfer to any of the following bank accounts: Maubank (143100007063), MCB (000444155708) or SBM (61030100056840)."
+    # Add banking information with payment acknowledgment
+    banking_para = "If this payment has already been made, we thank you and kindly request that you share a copy of the payment receipt at <font color='blue'>giarrearsrecovery@nicl.mu</font>. This will help us ensure that your policy records are updated promptly.<br/><br/>If the amount remains pending, we would be grateful if you could arrange settlement at your earliest convenience to maintain uninterrupted coverage. Payments can be made to any of the following bank accounts: Maubank (143100007063), MCB (000444155708) or SBM (61030100056840)."
     y_pos = add_paragraph(c, banking_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add breathing space after banking information
-    y_pos -= 8
+
     
-    # Add MauCAS QR Code payment option paragraph
-    qr_payment_para = "Alternatively, you may also settle payments instantly via the MauCAS QR Code (Scan to Pay) below using any mobile banking app such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications."
+    # Add policy number instruction
+    policy_instruction_para = f"Please quote your Policy Number <font name='Cambria-Bold'>{pol_no}</font> in the payment description to assist in correct allocation."
+    y_pos = add_paragraph(c, policy_instruction_para, styles['BodyText'], margin, y_pos, content_width)
+    
+    # Add MauCAS QR Code payment option paragraph (in bold)
+    qr_payment_para = "<font name='Cambria-Bold'>For your convenience, you may also settle payments instantly via the MauCAS QR Code (Scan to Pay) below using any mobile banking app such as Juice, MauBank WithMe, Blink, MyT Money, or other supported applications.</font>"
     y_pos = add_paragraph(c, qr_payment_para, styles['BodyText'], margin, y_pos, content_width)
     
     # Add QR code payment section if QR was generated
     if qr_filename and os.path.exists(qr_filename):
-        # Check if we need a new page for QR section
-        qr_section_height = 200  # Estimated height needed for QR section
-        if y_pos < qr_section_height:
-            c.showPage()
-            y_pos = height - margin
-        
         # Calculate center position for payment elements
         page_center_x = width / 2
         
         y_pos -= 10  # Reduced space before QR section
         
-        # Add MauCAS logo (centered)
+        # Add MauCAS logo (centered) - smaller size
         if os.path.exists("maucas2.jpeg"):
             img = ImageReader("maucas2.jpeg")
-            img_width = 110
+            img_width = 90  # Reduced from 110
             img_height = img_width * (img.getSize()[1] / img.getSize()[0])
             logo_x = page_center_x - (img_width / 2)
             c.drawImage(img, logo_x, y_pos - img_height, width=img_width, height=img_height)
-            y_pos -= img_height + 2
+            y_pos -= img_height + 2  # Reduced spacing
         
-        # Add QR code (centered)
-        qr_size = 100
+        # Add QR code (centered) - smaller size
+        qr_size = 80  # Reduced from 100
         qr_x = page_center_x - (qr_size / 2)
         c.drawImage(qr_filename, qr_x, y_pos - qr_size, width=qr_size, height=qr_size)
-        y_pos -= qr_size + 2
+        y_pos -= qr_size + 2  # Reduced spacing
         
-        # Add "NIC Health Insurance" text below QR code (centered)
-        c.setFont("Cambria-Bold", 11)
-        text_width = c.stringWidth("NIC Health Insurance", "Cambria-Bold", 11)
+        # Add "NIC Health Insurance" text below QR code (centered) - smaller font
+        c.setFont("Cambria-Bold", 10)  # Reduced from 11
+        text_width = c.stringWidth("NIC Health Insurance", "Cambria-Bold", 10)
         text_x = page_center_x - (text_width / 2)
         c.drawString(text_x, y_pos - 8, "NIC Health Insurance")
-        y_pos -= 10
+        y_pos -= 10  # Reduced spacing
         
-        # Add ZwennPay logo below the text (centered)
+        # Add ZwennPay logo below the text (centered) - smaller size
         if os.path.exists("zwennPay.jpg"):
             zwenn_img = ImageReader("zwennPay.jpg")
-            zwenn_width = 80
+            zwenn_width = 60  # Reduced from 80
             zwenn_height = zwenn_width * (zwenn_img.getSize()[1] / zwenn_img.getSize()[0])
             zwenn_x = page_center_x - (zwenn_width / 2)
             c.drawImage(zwenn_img, zwenn_x, y_pos - zwenn_height, width=zwenn_width, height=zwenn_height)
-            y_pos -= zwenn_height + 10
+            y_pos -= zwenn_height + 8  # Reduced spacing
         else:
             print(f"⚠️ Warning: zwennPay.jpg not found - skipping ZwennPay logo")
-            y_pos -= 10
+            y_pos -= 8
     
-    # Add contact information paragraph (moved from reminder point 4)
-    contact_para = "If you wish to discuss the arrears or would like to arrange a payment plan, please contact us on <font name='Cambria-Bold'>6023000</font> or at <font color='black'>giarrearsrecovery@nicl.mu</font>"
-    y_pos = add_paragraph(c, contact_para, styles['BodyText'], margin, y_pos, content_width)
+
     
-    # Add breathing space before closing paragraph
+    # Add understanding and contact information paragraph
+    understanding_para = "We understand that processing delays and unforeseen circumstances can occasionally occur. Should you wish to confirm a payment already made or discuss possible arrangements, please contact us on <font name='Cambria-Bold'>602 3000</font> or <font color='blue'>giarrearsrecovery@nicl.mu</font>. Our team will be pleased to assist you."
+    y_pos = add_paragraph(c, understanding_para, styles['BodyText'], margin, y_pos, content_width)
+    
+    # Add extra space before appreciation paragraph
+    y_pos -= 6
+    
+    # Add appreciation paragraph
+    appreciation_para = "Thank you for your attention and your continued trust in <font name='Cambria-Bold'>NIC General Insurance Co. Ltd.</font>"
+    y_pos = add_paragraph(c, appreciation_para, styles['BodyText'], margin, y_pos, content_width)
+    
+    # Add extra space before formal closing
     y_pos -= 8
     
-    # Add combined disregard and appreciation paragraph
-    closing_para = "Kindly disregard this letter if you have already settled the arrears on your Policy. We appreciate your prompt attention and thank you for your continued trust in <font name='Cambria-Bold'>NIC General Insurance Co. Ltd.</font>"
+    # Add formal closing
+    closing_para = "Yours sincerely,<br/><font name='Cambria-Bold'>NIC General Insurance Co. Ltd.</font>"
     y_pos = add_paragraph(c, closing_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add computer-generated letter disclaimer (centered, light grey)
-    y_pos -= 15
-    c.setFont("Cambria", 9)
-    c.setFillColor(colors.Color(0.5, 0.5, 0.5))  # Light grey color
-    disclaimer_text = "This is a computer-generated letter and does not require any signature."
-    text_width = c.stringWidth(disclaimer_text, "Cambria", 9)
-    text_x = (width - text_width) / 2  # Center horizontally
-    c.drawString(text_x, y_pos - 10, disclaimer_text)
+
+    
+
     
     # Save PDF
     c.save()
@@ -962,7 +952,3 @@ print(f"Skipped - Low amount (< MUR 100): {low_amount_count}")
 print(f"Skipped - No address: {no_address_count}")
 print(f"Skipped - Missing data: {missing_data_count}")
 print(f"🎉 Arrears letter generation completed!")
-
-
- 
-

@@ -1045,4 +1045,63 @@ router.get('/progress', (req, res) => {
     res.json(currentProgress);
 });
 
+// Download updated Excel file with processing results
+router.get('/download-updated-excel', async (req, res) => {
+    try {
+        console.log(`📥 Updated Excel download requested by ${req.session.user}`);
+
+        // Check if Excel file exists in either location
+        const excelPaths = [
+            path.join(__dirname, '../Extracted_Arrears_Data.xlsx'),
+            path.join(__dirname, '../uploads/arrears/Extracted_Arrears_Data.xlsx')
+        ];
+
+        let excelPath = null;
+        for (const testPath of excelPaths) {
+            if (await fs.pathExists(testPath)) {
+                excelPath = testPath;
+                console.log(`📁 Found Excel file at: ${testPath}`);
+                break;
+            }
+        }
+
+        if (!excelPath) {
+            console.log('❌ Updated Excel file not found');
+            return res.status(404).json({ 
+                error: 'Updated Excel file not found. Please generate letters first.' 
+            });
+        }
+
+        // Generate timestamp for filename
+        const timestamp = new Date().toISOString()
+            .replace(/[-:]/g, '')
+            .replace(/\..+/, '')
+            .replace('T', '_');
+        
+        const downloadFilename = `Updated_Arrears_Data_${timestamp}.xlsx`;
+
+        console.log(`📤 Sending Excel file as: ${downloadFilename}`);
+
+        // Set headers for Excel download
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+
+        // Send the file
+        res.download(excelPath, downloadFilename, (err) => {
+            if (err) {
+                console.error('❌ Excel download error:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to download Excel file' });
+                }
+            } else {
+                console.log(`✅ Excel file downloaded successfully: ${downloadFilename} for ${req.session.user}`);
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Download updated Excel error:', error);
+        res.status(500).json({ error: 'Failed to download updated Excel file' });
+    }
+});
+
 export default router;

@@ -276,6 +276,17 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     arrearsAPI.downloadAllIndividual(type);
   };
 
+  const handleDownloadUpdatedExcel = async () => {
+    console.log('📥 Downloading updated Excel file...');
+    try {
+      await arrearsAPI.downloadUpdatedExcel();
+    } catch (error) {
+      console.error('❌ Download error:', error);
+      // You could add a toast notification here if you have one
+      alert('Download failed. Please try again or contact support.');
+    }
+  };
+
   // Upload modal handlers
   const handleUploadConfirm = () => {
     if (uploadModalData) {
@@ -771,6 +782,65 @@ const ArrearsDashboard = ({ user, onLogout }) => {
               })}
             </div>
           </div>
+
+          {/* Processing Results Section */}
+          {processes.generate.status === 'completed' && processes.merge.status === 'completed' && (
+            <div style={{ marginTop: '32px' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '24px',
+                padding: '16px',
+                background: 'linear-gradient(135deg, #059669, #10b981)',
+                borderRadius: '12px',
+                color: 'white'
+              }}>
+                <FileText size={24} />
+                <h2 style={{ margin: 0, fontSize: '20px' }}>Processing Results</h2>
+              </div>
+
+              <div className="card">
+                <div style={{ textAlign: 'center', padding: '24px' }}>
+                  <FileText size={48} style={{ color: 'var(--primary-color)', marginBottom: '16px' }} />
+                  <h3 style={{ margin: '0 0 8px 0', color: 'var(--primary-color)' }}>
+                    Download Updated Excel File
+                  </h3>
+                  <p style={{ margin: '0 0 20px 0', color: '#6b7280', fontSize: '14px' }}>
+                    Get the original Excel file with processing results and comments
+                  </p>
+                  
+                  <button
+                    onClick={handleDownloadUpdatedExcel}
+                    className="btn btn-primary"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      margin: '0 auto',
+                      padding: '12px 24px'
+                    }}
+                  >
+                    <Download size={16} />
+                    Download Updated Excel File
+                  </button>
+                  
+                  <div style={{
+                    marginTop: '16px',
+                    padding: '12px',
+                    background: '#f0f9ff',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    color: '#1e40af'
+                  }}>
+                    <strong>File contains:</strong> Original data + COMMENTS column with processing results
+                    <br />
+                    (Generated letters, skipped records with reasons, etc.)
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
