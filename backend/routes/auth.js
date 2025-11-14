@@ -17,7 +17,7 @@ const AUTH_CONFIG = {
     teamName: "Health Insurance Team"
   },
   arrears: {
-    authorizedEmails: ["collections@nicl.mu", "giarrearsrecovery@nicl.mu", "mraheeman@nicl.mu", "mhasgarally@nicl.mu", "vikas.khanna@zwennpay.com"],
+    authorizedEmails: ["collections@nicl.mu", "giarrearsrecovery@nicl.mu", "mraheeman@nicl.mu", "mhasgarally@nicl.mu", "vkdel001@gmail.com", "vikas.khanna@zwennpay.com"],
     superPassword: "NICG@2025",
     teamName: "Collections & Arrears Team"
   }
