@@ -129,12 +129,19 @@ def format_date(date_value):
         return ""
     try:
         if isinstance(date_value, (int, float)):
+            # Excel serial number - convert using Excel's date origin
             date_obj = pd.to_datetime(date_value, origin='1899-12-30', unit='D')
         else:
-            date_obj = pd.to_datetime(date_value)
+            # String date - explicitly parse as DD/MM/YYYY (Mauritius format)
+            date_obj = pd.to_datetime(date_value, format='%d/%m/%Y', dayfirst=True)
         return date_obj.strftime('%d %B %Y')
     except:
-        return str(date_value)
+        # Fallback: try auto-detection with dayfirst=True
+        try:
+            date_obj = pd.to_datetime(date_value, dayfirst=True)
+            return date_obj.strftime('%d %B %Y')
+        except:
+            return str(date_value)
 
 # Function to format currency
 def format_currency(amount):
