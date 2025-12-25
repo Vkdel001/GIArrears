@@ -102,31 +102,32 @@ export const healthAPI = {
 
 // Arrears API
 export const arrearsAPI = {
-  uploadExcel: (file) => {
+  uploadExcel: (file, productType = 'health') => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('productType', productType);
     return api.post('/api/arrears/upload-excel', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
   },
-  generateLetters: () => api.post('/api/arrears/generate-letters', {}, {
+  generateLetters: (productType = 'health') => api.post('/api/arrears/generate-letters', { productType }, {
     timeout: 7200000 // 2 hours for letter generation - inline to survive build
   }),
-  mergeLetters: () => api.post('/api/arrears/merge-letters', {}, {
+  mergeLetters: (productType = 'health') => api.post('/api/arrears/merge-letters', { productType }, {
     timeout: 7200000 // 2 hours for merging - inline to survive build
   }),
   sendEmails: (emailData) => api.post('/api/arrears/send-emails', emailData),
-  getFiles: () => api.get('/api/arrears/files'),
-  getStatus: () => api.get('/api/arrears/status'),
-  getProgress: () => api.get('/api/arrears/progress'),
-  downloadIndividual: (type, filename) => {
-    window.open(`${api.defaults.baseURL}/api/arrears/download/individual/${type}/${filename}`, '_blank');
+  getFiles: (productType = 'health') => api.get(`/api/arrears/files?productType=${productType}`),
+  getStatus: (productType = 'health') => api.get(`/api/arrears/status?productType=${productType}`),
+  getProgress: (productType = 'health') => api.get(`/api/arrears/progress?productType=${productType}`),
+  downloadIndividual: (type, filename, productType = 'health') => {
+    window.open(`${api.defaults.baseURL}/api/arrears/download/individual/${type}/${filename}?productType=${productType}`, '_blank');
   },
-  downloadMerged: (type, filename) => {
-    window.open(`${api.defaults.baseURL}/api/arrears/download/merged/${type}/${filename}`, '_blank');
+  downloadMerged: (type, filename, productType = 'health') => {
+    window.open(`${api.defaults.baseURL}/api/arrears/download/merged/${type}/${filename}?productType=${productType}`, '_blank');
   },
-  downloadAllIndividual: (type) => {
-    window.open(`${api.defaults.baseURL}/api/arrears/download/all-individual/${type}`, '_blank');
+  downloadAllIndividual: (type, productType = 'health') => {
+    window.open(`${api.defaults.baseURL}/api/arrears/download/all-individual/${type}?productType=${productType}`, '_blank');
   },
   downloadUpdatedExcel: async () => {
     try {
@@ -181,6 +182,8 @@ export const arrearsAPI = {
       window.open(`${api.defaults.baseURL}/api/arrears/download-updated-excel`, '_blank');
     }
   },
+  resetWorkflow: (productType = 'health') => api.post('/api/arrears/reset', { productType }),
+  cleanup: (productType = 'health') => api.post('/api/arrears/cleanup', { productType }),
 };
 
 export default api;

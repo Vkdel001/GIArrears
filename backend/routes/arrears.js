@@ -21,6 +21,51 @@ const requireArrearsAuth = (req, res, next) => {
 // Apply auth middleware to all arrears routes
 router.use(requireArrearsAuth);
 
+// Product type configuration
+const PRODUCT_CONFIG = {
+    health: {
+        name: 'Health Insurance',
+        inputFile: 'Extracted_Arrears_Data.xlsx',
+        generator: 'recovery_processor.py',
+        merger: 'arrears_merger.py',
+        outputFolders: {
+            L0: '../L0',
+            L1: '../L1', 
+            L2: '../L2',
+            MED: '../output_mise_en_demeure'
+        },
+        mergedFolders: {
+            L0: '../L0_Merge',
+            L1: '../L1_Merge',
+            L2: '../L2_Merge', 
+            MED: '../MED_Merge'
+        }
+    },
+    nonmotor: {
+        name: 'Non-Motors Insurance',
+        inputFile: 'NonMotor_Arrears.xlsx',
+        generator: 'NonMotor_L0.py',
+        merger: 'merge_nonmotor_pdfs.py',
+        outputFolders: {
+            L0: '../Motor_L0',
+            L1: '../Motor_L1',
+            L2: '../Motor_L2',
+            MED: '../Motor_MED'
+        },
+        mergedFolders: {
+            L0: '../Motor_L0_Merge',
+            L1: '../Motor_L1_Merge',
+            L2: '../Motor_L2_Merge',
+            MED: '../Motor_MED_Merge'
+        }
+    }
+};
+
+// Helper function to get product config
+const getProductConfig = (productType) => {
+    return PRODUCT_CONFIG[productType] || PRODUCT_CONFIG.health;
+};
+
 // Configure multer for arrears file uploads
 const arrearsStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -29,7 +74,10 @@ const arrearsStorage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        cb(null, 'Extracted_Arrears_Data.xlsx');
+        // Get product type from request body or default to health
+        const productType = req.body.productType || 'health';
+        const config = getProductConfig(productType);
+        cb(null, config.inputFile);
     }
 });
 
@@ -175,7 +223,11 @@ router.post('/upload-excel', arrearsUpload.single('file'), async (req, res) => {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        console.log(`📁 Arrears Excel uploaded by ${req.session.user}: ${req.file.originalname}`);
+        const productType = req.body.productType || 'health';
+        const config = getProductConfig(productType);
+
+        console.log(`📁 ${config.name} Excel uploaded by ${req.session.user}: ${req.file.originalname}`);
+        console.log(`🔧 Product Type: ${productType}, Expected file: ${config.inputFile}`);
 
         // Analyze Excel file for record count and recovery distribution
         let recordCount = 0;
@@ -202,7 +254,12 @@ router.post('/upload-excel', arrearsUpload.single('file'), async (req, res) => {
                 });
                 recoveryDistribution = distribution;
             } else {
-                recoveryDistribution = { 'Unknown': recordCount };
+                // For Non-Motors or files without Recovery_action column, default to L0
+                if (productType === 'nonmotor') {
+                    recoveryDistribution = { 'L0': recordCount };
+                } else {
+                    recoveryDistribution = { 'Unknown': recordCount };
+                }
             }
 
             console.log(`✅ Excel analysis completed: ${recordCount} records`);
@@ -232,7 +289,9 @@ try:
         # Convert numpy types to regular Python types for JSON serialization
         recovery_dist = {str(k): int(v) for k, v in recovery_dist.items()}
     else:
-        recovery_dist = {'Unknown': total_count}
+        # For Non-Motors or files without Recovery_action column, check product type
+        # This is a fallback - we'll default to L0 for non-motor files
+        recovery_dist = {'L0': total_count}
     
     result = {
         'success': True,
@@ -288,11 +347,11 @@ except Exception as e:
 
         // Copy file to main location for processing (after successful analysis)
         if (recordCount > 0) {
-            const targetPath = path.join(__dirname, '../Extracted_Arrears_Data.xlsx');
+            const targetPath = path.join(__dirname, '..', config.inputFile);
             try {
                 // Use a safer approach - try to copy directly, overwriting if needed
                 await fs.copy(req.file.path, targetPath, { overwrite: true });
-                console.log('📁 File copied to processing location');
+                console.log(`📁 File copied to processing location: ${config.inputFile}`);
             } catch (copyError) {
                 console.warn('⚠️ Warning: Could not copy to processing location:', copyError.message);
                 // Try alternative approach - rename the uploaded file
@@ -315,7 +374,7 @@ except Exception as e:
                         }
                     }
                     await fs.move(req.file.path, targetPath);
-                    console.log('📁 File moved to processing location');
+                    console.log(`📁 File moved to processing location: ${config.inputFile}`);
                 } catch (moveError) {
                     console.warn('⚠️ Warning: Could not move to processing location:', moveError.message);
                     // Continue anyway - analysis was successful, file is in uploads folder
@@ -325,12 +384,13 @@ except Exception as e:
 
         res.json({
             success: true,
-            message: 'Arrears Excel file uploaded successfully',
+            message: `${config.name} Excel file uploaded successfully`,
             filename: req.file.filename,
             originalName: req.file.originalname,
             size: req.file.size,
             recordCount: recordCount,
-            recoveryDistribution: recoveryDistribution
+            recoveryDistribution: recoveryDistribution,
+            productType: productType
         });
 
     } catch (error) {
@@ -342,17 +402,19 @@ except Exception as e:
 // Generate arrears letters
 router.post('/generate-letters', async (req, res) => {
     try {
-        const scriptPath = path.join(__dirname, '../recovery_processor.py');
+        const productType = req.body.productType || 'health';
+        const config = getProductConfig(productType);
+        const scriptPath = path.join(__dirname, '..', config.generator);
 
         // Check if script exists
         if (!await fs.pathExists(scriptPath)) {
-            return res.status(500).json({ error: 'Recovery processor script not found' });
+            return res.status(500).json({ error: `${config.generator} script not found` });
         }
 
         // Check if Excel file exists in either location
         const excelPaths = [
-            path.join(__dirname, '../Extracted_Arrears_Data.xlsx'),
-            path.join(__dirname, '../uploads/arrears/Extracted_Arrears_Data.xlsx')
+            path.join(__dirname, '..', config.inputFile),
+            path.join(__dirname, '../uploads/arrears', config.inputFile)
         ];
 
         let excelExists = false;
@@ -364,11 +426,65 @@ router.post('/generate-letters', async (req, res) => {
         }
 
         if (!excelExists) {
-            return res.status(400).json({ error: 'Please upload Excel file first' });
+            return res.status(400).json({ error: `Please upload ${config.inputFile} file first` });
         }
 
-        console.log(`🔄 Starting arrears letter generation for ${req.session.user}`);
-        updateProgress('running', 10, 'Starting letter generation...', 'generate');
+        console.log(`🔄 Starting ${config.name} letter generation for ${req.session.user}`);
+        updateProgress('running', 5, `Cleaning up old ${config.name} files...`, 'generate');
+
+        // CLEANUP: Delete all old PDF files from output folders before generation
+        const outputFolders = Object.values(config.outputFolders);
+        let totalCleaned = 0;
+
+        for (const folderPath of outputFolders) {
+            const fullPath = path.join(__dirname, folderPath);
+            if (await fs.pathExists(fullPath)) {
+                try {
+                    const files = await fs.readdir(fullPath);
+                    const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+                    
+                    for (const file of pdfFiles) {
+                        await fs.remove(path.join(fullPath, file));
+                        totalCleaned++;
+                    }
+                    
+                    if (pdfFiles.length > 0) {
+                        console.log(`🗑️ Cleaned up ${pdfFiles.length} old PDFs from ${path.basename(fullPath)}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Could not clean up folder ${fullPath}:`, error.message);
+                }
+            }
+        }
+
+        // CLEANUP: Also delete old merged PDFs
+        const mergedFolders = Object.values(config.mergedFolders);
+        for (const folderPath of mergedFolders) {
+            const fullPath = path.join(__dirname, folderPath);
+            if (await fs.pathExists(fullPath)) {
+                try {
+                    const files = await fs.readdir(fullPath);
+                    const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+                    
+                    for (const file of pdfFiles) {
+                        await fs.remove(path.join(fullPath, file));
+                        totalCleaned++;
+                    }
+                    
+                    if (pdfFiles.length > 0) {
+                        console.log(`🗑️ Cleaned up ${pdfFiles.length} old merged PDFs from ${path.basename(fullPath)}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Could not clean up merged folder ${fullPath}:`, error.message);
+                }
+            }
+        }
+
+        if (totalCleaned > 0) {
+            console.log(`✅ Total cleanup: ${totalCleaned} old PDF files removed before generation`);
+        }
+
+        updateProgress('running', 10, `Starting ${config.name} letter generation...`, 'generate');
 
         // Start time-based progress updates
         const startTime = Date.now();
@@ -384,7 +500,7 @@ router.post('/generate-letters', async (req, res) => {
                 progressPercent = Math.min(10 + (elapsedMinutes * 5), 90);
             }
 
-            updateProgress('running', progressPercent, `Processing letters... ${timeDisplay}`, 'generate', {
+            updateProgress('running', progressPercent, `Processing ${config.name} letters... ${timeDisplay}`, 'generate', {
                 elapsed: timeDisplay,
                 elapsedMinutes,
                 elapsedSeconds
@@ -428,23 +544,24 @@ router.post('/generate-letters', async (req, res) => {
             clearInterval(progressInterval);
 
             if (code === 0) {
-                console.log(`✅ Arrears letter generation completed for ${req.session.user}`);
+                console.log(`✅ ${config.name} letter generation completed for ${req.session.user}`);
                 const totalTime = Math.floor((Date.now() - startTime) / 1000);
                 const minutes = Math.floor(totalTime / 60);
                 const seconds = totalTime % 60;
                 const finalTimeDisplay = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-                updateProgress('completed', 100, `Letters generated successfully in ${finalTimeDisplay}`, 'generate');
+                updateProgress('completed', 100, `${config.name} letters generated successfully in ${finalTimeDisplay}`, 'generate');
                 res.json({
                     success: true,
-                    message: 'Arrears letters generated successfully',
-                    output: output.trim()
+                    message: `${config.name} letters generated successfully`,
+                    output: output.trim(),
+                    productType: productType
                 });
             } else {
-                console.error(`❌ Arrears letter generation failed with code ${code}`);
-                updateProgress('failed', 0, 'Letter generation failed', 'generate');
+                console.error(`❌ ${config.name} letter generation failed with code ${code}`);
+                updateProgress('failed', 0, `${config.name} letter generation failed`, 'generate');
                 res.status(500).json({
-                    error: 'Letter generation failed',
+                    error: `${config.name} letter generation failed`,
                     details: errorOutput || output,
                     exitCode: code
                 });
@@ -472,23 +589,20 @@ router.post('/generate-letters', async (req, res) => {
 // Merge letters by recovery type
 router.post('/merge-letters', async (req, res) => {
     try {
-        const scriptPath = path.join(__dirname, '../arrears_merger.py');
+        const productType = req.body.productType || 'health';
+        const config = getProductConfig(productType);
+        const scriptPath = path.join(__dirname, '..', config.merger);
 
         // Check if script exists
         if (!await fs.pathExists(scriptPath)) {
-            return res.status(500).json({ error: 'Arrears merger script not found' });
+            return res.status(500).json({ error: `${config.merger} script not found` });
         }
 
-        console.log(`🔄 Starting arrears letter merging for ${req.session.user}`);
-        updateProgress('running', 5, 'Cleaning up old merged files...', 'merge');
+        console.log(`🔄 Starting ${config.name} letter merging for ${req.session.user}`);
+        updateProgress('running', 5, `Cleaning up old ${config.name} merged files...`, 'merge');
 
-        // Clean up old merged PDFs before creating new ones
-        const mergeDirs = [
-            path.join(__dirname, '../L0_Merge'),
-            path.join(__dirname, '../L1_Merge'),
-            path.join(__dirname, '../L2_Merge'),
-            path.join(__dirname, '../MED_Merge')
-        ];
+        // CLEANUP: Delete all old merged PDFs before creating new ones
+        const mergeDirs = Object.values(config.mergedFolders).map(dir => path.join(__dirname, dir));
 
         try {
             let totalCleaned = 0;
@@ -512,7 +626,7 @@ router.post('/merge-letters', async (req, res) => {
             console.warn('⚠️ Warning: Could not clean up old merged files:', cleanupError.message);
         }
 
-        updateProgress('running', 10, 'Starting merger script...', 'merge');
+        updateProgress('running', 10, `Starting ${config.name} merger script...`, 'merge');
 
         // Start time-based progress updates for merge (faster process)
         const startTime = Date.now();
@@ -529,7 +643,7 @@ router.post('/merge-letters', async (req, res) => {
                 progressPercent = Math.min(10 + (elapsed30SecIntervals * 5), 90);
             }
 
-            updateProgress('running', progressPercent, `Merging PDFs... ${timeDisplay}`, 'merge', {
+            updateProgress('running', progressPercent, `Merging ${config.name} PDFs... ${timeDisplay}`, 'merge', {
                 elapsed: timeDisplay,
                 elapsedMinutes,
                 elapsedSeconds
@@ -560,23 +674,24 @@ router.post('/merge-letters', async (req, res) => {
             clearInterval(progressInterval);
 
             if (code === 0) {
-                console.log(`✅ Arrears letter merging completed for ${req.session.user}`);
+                console.log(`✅ ${config.name} letter merging completed for ${req.session.user}`);
                 const totalTime = Math.floor((Date.now() - startTime) / 1000);
                 const minutes = Math.floor(totalTime / 60);
                 const seconds = totalTime % 60;
                 const finalTimeDisplay = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
-                updateProgress('completed', 100, `Letters merged successfully in ${finalTimeDisplay}`, 'merge');
+                updateProgress('completed', 100, `${config.name} letters merged successfully in ${finalTimeDisplay}`, 'merge');
                 res.json({
                     success: true,
-                    message: 'Arrears letters merged successfully by recovery type',
-                    output: output.trim()
+                    message: `${config.name} letters merged successfully by recovery type`,
+                    output: output.trim(),
+                    productType: productType
                 });
             } else {
-                console.error(`❌ Arrears letter merging failed with code ${code}`);
-                updateProgress('failed', 0, 'Letter merging failed', 'merge');
+                console.error(`❌ ${config.name} letter merging failed with code ${code}`);
+                updateProgress('failed', 0, `${config.name} letter merging failed`, 'merge');
                 res.status(500).json({
-                    error: 'Letter merging failed',
+                    error: `${config.name} letter merging failed`,
                     details: errorOutput || output,
                     exitCode: code
                 });
@@ -714,6 +829,9 @@ router.post('/send-emails', async (req, res) => {
 // Get files list by recovery type
 router.get('/files', async (req, res) => {
     try {
+        const productType = req.query.productType || 'health';
+        const config = getProductConfig(productType);
+        
         const files = {
             individual: {
                 L0: [],
@@ -730,21 +848,17 @@ router.get('/files', async (req, res) => {
         };
 
         // Individual PDFs by recovery type
-        const individualDirs = {
-            L0: path.join(__dirname, '../L0'),
-            L1: path.join(__dirname, '../L1'),
-            L2: path.join(__dirname, '../L2'),
-            MED: path.join(__dirname, '../output_mise_en_demeure')
-        };
+        const individualDirs = config.outputFolders;
 
         for (const [type, dirPath] of Object.entries(individualDirs)) {
-            if (await fs.pathExists(dirPath)) {
-                const dirFiles = await fs.readdir(dirPath);
+            const fullPath = path.join(__dirname, dirPath);
+            if (await fs.pathExists(fullPath)) {
+                const dirFiles = await fs.readdir(fullPath);
                 files.individual[type] = await Promise.all(
                     dirFiles
                         .filter(file => file.endsWith('.pdf'))
                         .map(async file => {
-                            const filePath = path.join(dirPath, file);
+                            const filePath = path.join(fullPath, file);
                             const stats = await fs.stat(filePath);
                             return {
                                 name: file,
@@ -758,21 +872,17 @@ router.get('/files', async (req, res) => {
         }
 
         // Merged PDFs by recovery type
-        const mergedDirs = {
-            L0: path.join(__dirname, '../L0_Merge'),
-            L1: path.join(__dirname, '../L1_Merge'),
-            L2: path.join(__dirname, '../L2_Merge'),
-            MED: path.join(__dirname, '../MED_Merge')
-        };
+        const mergedDirs = config.mergedFolders;
 
         for (const [type, dirPath] of Object.entries(mergedDirs)) {
-            if (await fs.pathExists(dirPath)) {
-                const dirFiles = await fs.readdir(dirPath);
+            const fullPath = path.join(__dirname, dirPath);
+            if (await fs.pathExists(fullPath)) {
+                const dirFiles = await fs.readdir(fullPath);
                 files.merged[type] = await Promise.all(
                     dirFiles
                         .filter(file => file.endsWith('.pdf'))
                         .map(async file => {
-                            const filePath = path.join(dirPath, file);
+                            const filePath = path.join(fullPath, file);
                             const stats = await fs.stat(filePath);
                             return {
                                 name: file,
@@ -797,19 +907,14 @@ router.get('/files', async (req, res) => {
 router.get('/download/individual/:type/:filename', async (req, res) => {
     try {
         const { type, filename } = req.params;
+        const productType = req.query.productType || 'health';
+        const config = getProductConfig(productType);
 
-        const dirMap = {
-            L0: '../L0',
-            L1: '../L1',
-            L2: '../L2',
-            MED: '../output_mise_en_demeure'
-        };
-
-        if (!dirMap[type]) {
+        if (!config.outputFolders[type]) {
             return res.status(400).json({ error: 'Invalid recovery type' });
         }
 
-        const filePath = path.join(__dirname, dirMap[type], filename);
+        const filePath = path.join(__dirname, config.outputFolders[type], filename);
 
         if (!await fs.pathExists(filePath)) {
             return res.status(404).json({ error: 'File not found' });
@@ -831,19 +936,14 @@ router.get('/download/individual/:type/:filename', async (req, res) => {
 router.get('/download/merged/:type/:filename', async (req, res) => {
     try {
         const { type, filename } = req.params;
+        const productType = req.query.productType || 'health';
+        const config = getProductConfig(productType);
 
-        const dirMap = {
-            L0: '../L0_Merge',
-            L1: '../L1_Merge',
-            L2: '../L2_Merge',
-            MED: '../MED_Merge'
-        };
-
-        if (!dirMap[type]) {
+        if (!config.mergedFolders[type]) {
             return res.status(400).json({ error: 'Invalid recovery type' });
         }
 
-        const filePath = path.join(__dirname, dirMap[type], filename);
+        const filePath = path.join(__dirname, config.mergedFolders[type], filename);
 
         if (!await fs.pathExists(filePath)) {
             return res.status(404).json({ error: 'File not found' });
@@ -865,19 +965,14 @@ router.get('/download/merged/:type/:filename', async (req, res) => {
 router.get('/download/all-individual/:type', async (req, res) => {
     try {
         const { type } = req.params;
+        const productType = req.query.productType || 'health';
+        const config = getProductConfig(productType);
 
-        const dirMap = {
-            L0: '../L0',
-            L1: '../L1',
-            L2: '../L2',
-            MED: '../output_mise_en_demeure'
-        };
-
-        if (!dirMap[type]) {
+        if (!config.outputFolders[type]) {
             return res.status(400).json({ error: 'Invalid recovery type' });
         }
 
-        const outputDir = path.join(__dirname, dirMap[type]);
+        const outputDir = path.join(__dirname, config.outputFolders[type]);
 
         if (!await fs.pathExists(outputDir)) {
             return res.status(404).json({ error: 'No PDFs found' });
@@ -957,12 +1052,16 @@ router.get('/download/all-individual/:type', async (req, res) => {
 // Check workflow status
 router.get('/status', async (req, res) => {
     try {
+        const productType = req.query.productType || 'health';
+        const config = getProductConfig(productType);
+        
         const status = {
             upload: false,
             generate: false,
             merge: false,
             canSendEmails: false,
             currentStep: 1,
+            productType: productType,
             recoveryStats: {
                 L0: { individual: 0, merged: 0 },
                 L1: { individual: 0, merged: 0 },
@@ -973,8 +1072,8 @@ router.get('/status', async (req, res) => {
 
         // Check if Excel file exists in either location
         const excelPaths = [
-            path.join(__dirname, '../Extracted_Arrears_Data.xlsx'),
-            path.join(__dirname, '../uploads/arrears/Extracted_Arrears_Data.xlsx')
+            path.join(__dirname, '..', config.inputFile),
+            path.join(__dirname, '../uploads/arrears', config.inputFile)
         ];
 
         for (const excelPath of excelPaths) {
@@ -986,17 +1085,13 @@ router.get('/status', async (req, res) => {
         }
 
         // Check individual PDFs by recovery type
-        const individualDirs = {
-            L0: path.join(__dirname, '../L0'),
-            L1: path.join(__dirname, '../L1'),
-            L2: path.join(__dirname, '../L2'),
-            MED: path.join(__dirname, '../output_mise_en_demeure')
-        };
+        const individualDirs = config.outputFolders;
 
         let totalIndividual = 0;
         for (const [type, dirPath] of Object.entries(individualDirs)) {
-            if (await fs.pathExists(dirPath)) {
-                const files = await fs.readdir(dirPath);
+            const fullPath = path.join(__dirname, dirPath);
+            if (await fs.pathExists(fullPath)) {
+                const files = await fs.readdir(fullPath);
                 const pdfCount = files.filter(file => file.endsWith('.pdf')).length;
                 status.recoveryStats[type].individual = pdfCount;
                 totalIndividual += pdfCount;
@@ -1009,17 +1104,13 @@ router.get('/status', async (req, res) => {
         }
 
         // Check merged PDFs by recovery type
-        const mergedDirs = {
-            L0: path.join(__dirname, '../L0_Merge'),
-            L1: path.join(__dirname, '../L1_Merge'),
-            L2: path.join(__dirname, '../L2_Merge'),
-            MED: path.join(__dirname, '../MED_Merge')
-        };
+        const mergedDirs = config.mergedFolders;
 
         let totalMerged = 0;
         for (const [type, dirPath] of Object.entries(mergedDirs)) {
-            if (await fs.pathExists(dirPath)) {
-                const files = await fs.readdir(dirPath);
+            const fullPath = path.join(__dirname, dirPath);
+            if (await fs.pathExists(fullPath)) {
+                const files = await fs.readdir(fullPath);
                 const pdfCount = files.filter(file => file.endsWith('.pdf')).length;
                 status.recoveryStats[type].merged = pdfCount;
                 totalMerged += pdfCount;
@@ -1043,6 +1134,155 @@ router.get('/status', async (req, res) => {
 // Get progress (real-time progress tracking)
 router.get('/progress', (req, res) => {
     res.json(currentProgress);
+});
+
+// Reset workflow - clear all generated files and reset progress
+router.post('/reset', async (req, res) => {
+    try {
+        const productType = req.body.productType || 'health';
+        const config = getProductConfig(productType);
+        
+        console.log(`🔄 Resetting ${config.name} workflow for ${req.session.user}`);
+        
+        // Reset progress
+        currentProgress = {
+            status: 'idle',
+            progress: 0,
+            message: 'No active process',
+            step: null
+        };
+        
+        // Clear all output folders
+        const allFolders = [
+            ...Object.values(config.outputFolders),
+            ...Object.values(config.mergedFolders)
+        ];
+        
+        let totalFilesRemoved = 0;
+        
+        for (const folderPath of allFolders) {
+            const fullPath = path.join(__dirname, folderPath);
+            if (await fs.pathExists(fullPath)) {
+                try {
+                    const files = await fs.readdir(fullPath);
+                    const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+                    
+                    for (const file of pdfFiles) {
+                        await fs.remove(path.join(fullPath, file));
+                        totalFilesRemoved++;
+                    }
+                    
+                    if (pdfFiles.length > 0) {
+                        console.log(`🗑️ Cleared ${pdfFiles.length} PDFs from ${path.basename(fullPath)}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Could not clear folder ${fullPath}:`, error.message);
+                }
+            }
+        }
+        
+        // Also remove the input Excel file
+        try {
+            const excelPaths = [
+                path.join(__dirname, '..', config.inputFile),
+                path.join(__dirname, '../uploads/arrears', config.inputFile)
+            ];
+            
+            for (const excelPath of excelPaths) {
+                if (await fs.pathExists(excelPath)) {
+                    await fs.remove(excelPath);
+                    console.log(`🗑️ Removed input file: ${config.inputFile}`);
+                }
+            }
+        } catch (error) {
+            console.warn(`⚠️ Could not remove input file:`, error.message);
+        }
+        
+        console.log(`✅ Reset completed: ${totalFilesRemoved} files removed`);
+        
+        res.json({
+            success: true,
+            message: `${config.name} workflow reset successfully`,
+            filesRemoved: totalFilesRemoved
+        });
+        
+    } catch (error) {
+        console.error('Reset workflow error:', error);
+        res.status(500).json({ error: 'Failed to reset workflow' });
+    }
+});
+
+// Manual cleanup endpoint - force delete all PDFs from Motor_L0 and Motor_L0_Merge
+router.post('/cleanup', async (req, res) => {
+    try {
+        const productType = req.body.productType || 'health';
+        const config = getProductConfig(productType);
+        
+        console.log(`🗑️ Manual cleanup requested for ${config.name} by ${req.session.user}`);
+        
+        // Force cleanup of all PDF files
+        const allFolders = [
+            ...Object.values(config.outputFolders),
+            ...Object.values(config.mergedFolders)
+        ];
+        
+        let totalFilesRemoved = 0;
+        const cleanupResults = [];
+        
+        for (const folderPath of allFolders) {
+            const fullPath = path.join(__dirname, folderPath);
+            const folderName = path.basename(fullPath);
+            
+            if (await fs.pathExists(fullPath)) {
+                try {
+                    const files = await fs.readdir(fullPath);
+                    const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+                    
+                    for (const file of pdfFiles) {
+                        await fs.remove(path.join(fullPath, file));
+                        totalFilesRemoved++;
+                    }
+                    
+                    cleanupResults.push({
+                        folder: folderName,
+                        filesRemoved: pdfFiles.length,
+                        status: 'success'
+                    });
+                    
+                    if (pdfFiles.length > 0) {
+                        console.log(`🗑️ Cleaned ${pdfFiles.length} PDFs from ${folderName}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Could not clean folder ${fullPath}:`, error.message);
+                    cleanupResults.push({
+                        folder: folderName,
+                        filesRemoved: 0,
+                        status: 'error',
+                        error: error.message
+                    });
+                }
+            } else {
+                cleanupResults.push({
+                    folder: folderName,
+                    filesRemoved: 0,
+                    status: 'not_found'
+                });
+            }
+        }
+        
+        console.log(`✅ Manual cleanup completed: ${totalFilesRemoved} files removed`);
+        
+        res.json({
+            success: true,
+            message: `Manual cleanup completed for ${config.name}`,
+            totalFilesRemoved: totalFilesRemoved,
+            details: cleanupResults
+        });
+        
+    } catch (error) {
+        console.error('Manual cleanup error:', error);
+        res.status(500).json({ error: 'Failed to perform cleanup' });
+    }
 });
 
 export default router;

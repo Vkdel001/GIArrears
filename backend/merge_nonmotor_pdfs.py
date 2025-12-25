@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Motor Insurance PDF Merger
-Combines all PDF files from output_motor folder into a single merged PDF
+Motor Insurance Arrears PDF Merger
+Combines all PDF files from Motor_L0 folder into a single merged PDF
 Uses PyMuPDF for reliable QR code and image preservation across Windows/Ubuntu
 """
 
@@ -21,7 +21,7 @@ except ImportError:
 
 def test_pdf_files():
     """Test individual PDF files to check if they're readable using PyMuPDF"""
-    input_folder = "output_motor"
+    input_folder = "NonMotor_L0"
     pdf_files = glob.glob(os.path.join(input_folder, "*.pdf"))
     
     if not pdf_files:
@@ -49,16 +49,16 @@ def test_pdf_files():
             print(f"❌ {os.path.basename(pdf_file)}: Error - {str(e)}")
 
 def merge_motor_pdfs():
-    """Merge all PDFs from output_motor folder into a single PDF using PyMuPDF"""
+    """Merge all PDFs from Motor_L0 folder into a single PDF using PyMuPDF"""
     
     # Define folders
-    input_folder = "output_motor"
-    output_folder = "merged_motor_policies"
+    input_folder = "Motor_L0"
+    output_folder = "Motor_L0_Merge"
     
     # Check if input folder exists
     if not os.path.exists(input_folder):
         print(f"❌ Error: Input folder '{input_folder}' not found!")
-        print("Please run the Motor_Insurance_Renewal.py script first to generate PDFs.")
+        print("Please run the Motor_L0.py script first to generate PDFs.")
         return
     
     # Create output folder if it doesn't exist
@@ -80,7 +80,7 @@ def merge_motor_pdfs():
     
     # Create merged PDF filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    merged_filename = f"Merged_Motor_Policies_{timestamp}.pdf"
+    merged_filename = f"Merged_Motor_L0_Arrears_{timestamp}.pdf"
     merged_filepath = os.path.join(output_folder, merged_filename)
     
     try:

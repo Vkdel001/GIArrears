@@ -6,6 +6,11 @@ import FileList from '../shared/FileList';
 import { arrearsAPI } from '../../services/api';
 
 const ArrearsDashboard = ({ user, onLogout }) => {
+  // Product type selection state
+  const [productType, setProductType] = useState('');
+  const [showProductConfirmModal, setShowProductConfirmModal] = useState(false);
+  const [selectedProductData, setSelectedProductData] = useState(null);
+  
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [recordCount, setRecordCount] = useState(0);
@@ -58,8 +63,10 @@ const ArrearsDashboard = ({ user, onLogout }) => {
   }, []);
 
   const checkWorkflowStatus = async (autoLoad = false, isInitialLoad = false) => {
+    if (!productType && !isInitialLoad) return; // Don't check status without product type
+    
     try {
-      const response = await arrearsAPI.getStatus();
+      const response = await arrearsAPI.getStatus(productType || 'health');
       const status = response.data;
       
       // Check if there's existing data
@@ -88,7 +95,8 @@ const ArrearsDashboard = ({ user, onLogout }) => {
         setRecoveryStats(status.recoveryStats || {});
         
         if (status.upload) {
-          setUploadedFile({ name: 'Extracted_Arrears_Data.xlsx' });
+          const config = productTypeConfig[productType || 'health'];
+          setUploadedFile({ name: config.inputFile });
         }
       }
       
@@ -130,8 +138,10 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   // Poll for progress updates
   const pollProgress = async () => {
+    if (!productType) return;
+    
     try {
-      const response = await arrearsAPI.getProgress();
+      const response = await arrearsAPI.getProgress(productType);
       const progress = response.data;
       
       if (progress.step && progress.status !== 'idle') {
@@ -164,10 +174,15 @@ const ArrearsDashboard = ({ user, onLogout }) => {
   }, [processes]);
 
   const handleFileUpload = async (file) => {
+    if (!productType) {
+      alert('Please select a product type first');
+      return;
+    }
+    
     updateProcess('upload', 'running', 0);
     
     try {
-      const response = await arrearsAPI.uploadExcel(file);
+      const response = await arrearsAPI.uploadExcel(file, productType);
       const recordCount = response.data.recordCount || 0;
       const recoveryDistribution = response.data.recoveryDistribution || {};
       
@@ -191,7 +206,7 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     updateProcess('generate', 'running', 0);
     
     try {
-      await arrearsAPI.generateLetters();
+      await arrearsAPI.generateLetters(productType);
       // Show completion modal when generation actually completes
       updateProcess('generate', 'completed', 100, 'Letters generated successfully', {}, true);
       setCurrentStep(3);
@@ -207,7 +222,7 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     updateProcess('merge', 'running', 0);
     
     try {
-      await arrearsAPI.mergeLetters();
+      await arrearsAPI.mergeLetters(productType);
       // Show completion modal when merge actually completes
       updateProcess('merge', 'completed', 100, 'Letters merged successfully', {}, true);
       setCurrentStep(4);
@@ -252,9 +267,11 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   // Load files list
   const loadFiles = async () => {
+    if (!productType) return;
+    
     setFilesLoading(true);
     try {
-      const response = await arrearsAPI.getFiles();
+      const response = await arrearsAPI.getFiles(productType);
       setFiles(response.data);
     } catch (error) {
       console.error('Failed to load files:', error);
@@ -265,15 +282,15 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   // Handle file downloads
   const handleDownloadIndividual = (type, filename) => {
-    arrearsAPI.downloadIndividual(type, filename);
+    arrearsAPI.downloadIndividual(type, filename, productType);
   };
 
   const handleDownloadMerged = (type, filename) => {
-    arrearsAPI.downloadMerged(type, filename);
+    arrearsAPI.downloadMerged(type, filename, productType);
   };
 
   const handleDownloadAllIndividual = (type) => {
-    arrearsAPI.downloadAllIndividual(type);
+    arrearsAPI.downloadAllIndividual(type, productType);
   };
 
   // Upload modal handlers
@@ -296,45 +313,65 @@ const ArrearsDashboard = ({ user, onLogout }) => {
   };
 
   // Reset/Clear workflow
-  const handleResetWorkflow = () => {
-    if (window.confirm('Are you sure you want to clear all progress and start fresh? This will reset all steps.')) {
-      // Reset all state
-      setCurrentStep(1);
-      setUploadedFile(null);
-      setRecordCount(0);
-      setRecoveryDistribution({});
-      setProcesses({
-        upload: { status: 'pending', progress: 0, message: '', details: {} },
-        generate: { status: 'pending', progress: 0, message: '', details: {} },
-        merge: { status: 'pending', progress: 0, message: '', details: {} },
-        email: { status: 'pending', progress: 0, message: '', details: {} }
-      });
-      setRecoveryStats({
-        L0: { individual: 0, merged: 0 },
-        L1: { individual: 0, merged: 0 },
-        L2: { individual: 0, merged: 0 },
-        MED: { individual: 0, merged: 0 }
-      });
-      setFiles({
-        individual: { L0: [], L1: [], L2: [], MED: [] },
-        merged: { L0: [], L1: [], L2: [], MED: [] }
-      });
-      
-      // Close any open modals
-      setShowUploadModal(false);
-      setShowGenerateCompleteModal(false);
-      setShowMergeCompleteModal(false);
-      setShowExistingDataNotice(false);
-      setShowEmailConfirmModal(false);
-      setUploadModalData(null);
-      setCompletionData(null);
-      setExistingDataInfo(null);
-      setEmailConfirmText('');
-      
-      // Reset the initial load flag so the modal can show again if needed
-      setHasHandledInitialLoad(false);
-      
-      console.log('🔄 Workflow reset - starting fresh');
+  const handleResetWorkflow = async (showConfirm = true) => {
+    const doReset = async () => {
+      try {
+        // Call backend reset API if product type is selected
+        if (productType) {
+          await arrearsAPI.resetWorkflow(productType);
+        }
+        
+        // Reset all state
+        setCurrentStep(1);
+        setUploadedFile(null);
+        setRecordCount(0);
+        setRecoveryDistribution({});
+        setProcesses({
+          upload: { status: 'pending', progress: 0, message: '', details: {} },
+          generate: { status: 'pending', progress: 0, message: '', details: {} },
+          merge: { status: 'pending', progress: 0, message: '', details: {} },
+          email: { status: 'pending', progress: 0, message: '', details: {} }
+        });
+        setRecoveryStats({
+          L0: { individual: 0, merged: 0 },
+          L1: { individual: 0, merged: 0 },
+          L2: { individual: 0, merged: 0 },
+          MED: { individual: 0, merged: 0 }
+        });
+        setFiles({
+          individual: { L0: [], L1: [], L2: [], MED: [] },
+          merged: { L0: [], L1: [], L2: [], MED: [] }
+        });
+        
+        // Close any open modals
+        setShowUploadModal(false);
+        setShowGenerateCompleteModal(false);
+        setShowMergeCompleteModal(false);
+        setShowExistingDataNotice(false);
+        setShowEmailConfirmModal(false);
+        setShowProductConfirmModal(false);
+        setUploadModalData(null);
+        setCompletionData(null);
+        setExistingDataInfo(null);
+        setSelectedProductData(null);
+        setEmailConfirmText('');
+        
+        // Reset the initial load flag so the modal can show again if needed
+        setHasHandledInitialLoad(false);
+        
+        console.log('🔄 Workflow reset - starting fresh');
+      } catch (error) {
+        console.error('Reset failed:', error);
+        alert('Failed to reset workflow. Please try again.');
+      }
+    };
+
+    if (showConfirm) {
+      if (window.confirm('Are you sure you want to clear all progress and start fresh? This will reset all steps and remove generated files.')) {
+        await doReset();
+      }
+    } else {
+      await doReset();
     }
   };
 
@@ -370,6 +407,49 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     MED: { name: 'Legal (MED)', color: '#991b1b', description: 'Mise en Demeure' }
   };
 
+  // Product type configurations
+  const productTypeConfig = {
+    health: {
+      name: 'Health Insurance',
+      inputFile: 'Extracted_Arrears_Data.xlsx',
+      color: '#059669',
+      icon: '🏥',
+      description: 'Health insurance arrears processing'
+    },
+    nonmotor: {
+      name: 'Non-Motors Insurance',
+      inputFile: 'NonMotor_Arrears.xlsx',
+      color: '#dc2626',
+      icon: '🛡️',
+      description: 'Non-motor insurance arrears processing'
+    }
+  };
+
+  // Product type selection handlers
+  const handleProductTypeSelect = (type) => {
+    const config = productTypeConfig[type];
+    setSelectedProductData({
+      type,
+      config
+    });
+    setShowProductConfirmModal(true);
+  };
+
+  const handleProductConfirm = () => {
+    if (selectedProductData) {
+      setProductType(selectedProductData.type);
+      setShowProductConfirmModal(false);
+      setSelectedProductData(null);
+      // Reset workflow when changing product type
+      handleResetWorkflow(false); // Don't show confirmation for product type change
+    }
+  };
+
+  const handleProductCancel = () => {
+    setShowProductConfirmModal(false);
+    setSelectedProductData(null);
+  };
+
   return (
     <div className="container">
       {/* Header */}
@@ -402,6 +482,99 @@ const ArrearsDashboard = ({ user, onLogout }) => {
           </div>
         </div>
       </div>
+
+      {/* Product Type Selection */}
+      {!productType && (
+        <div className="card" style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+            <AlertTriangle size={24} style={{ color: 'var(--primary-color)' }} />
+            <div>
+              <h3 style={{ margin: 0, color: 'var(--primary-color)' }}>Select Product Type</h3>
+              <p style={{ margin: 0, color: '#6b7280' }}>Choose the insurance product type for arrears processing</p>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+            {Object.entries(productTypeConfig).map(([type, config]) => (
+              <div
+                key={type}
+                onClick={() => handleProductTypeSelect(type)}
+                style={{
+                  padding: '20px',
+                  border: `2px solid ${config.color}30`,
+                  borderRadius: '12px',
+                  background: `${config.color}08`,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  ':hover': {
+                    borderColor: `${config.color}60`,
+                    background: `${config.color}15`
+                  }
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.borderColor = `${config.color}60`;
+                  e.target.style.background = `${config.color}15`;
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.borderColor = `${config.color}30`;
+                  e.target.style.background = `${config.color}08`;
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '32px' }}>{config.icon}</span>
+                  <div>
+                    <h4 style={{ margin: 0, color: config.color, fontSize: '18px' }}>{config.name}</h4>
+                    <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>{config.description}</p>
+                  </div>
+                </div>
+                <div style={{ 
+                  padding: '8px 12px', 
+                  background: `${config.color}20`, 
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: config.color,
+                  fontWeight: '500'
+                }}>
+                  Expected file: {config.inputFile}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Selected Product Type Banner */}
+      {productType && (
+        <div className="card" style={{ 
+          marginBottom: '24px',
+          background: `linear-gradient(135deg, ${productTypeConfig[productType].color}15, ${productTypeConfig[productType].color}25)`,
+          border: `2px solid ${productTypeConfig[productType].color}40`
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>{productTypeConfig[productType].icon}</span>
+              <div>
+                <h3 style={{ margin: 0, color: productTypeConfig[productType].color }}>
+                  {productTypeConfig[productType].name} - Arrears Processing
+                </h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  Input file: {productTypeConfig[productType].inputFile}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => {
+                setProductType('');
+                handleResetWorkflow(false);
+              }}
+              className="btn btn-secondary"
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              Change Product Type
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Recovery Distribution Stats */}
       {Object.keys(recoveryDistribution).length > 0 && (
@@ -453,8 +626,8 @@ const ArrearsDashboard = ({ user, onLogout }) => {
           <FileUpload
             onFileSelect={handleFileUpload}
             acceptedTypes=".xlsx,.xls"
-            expectedFileName="Extracted_Arrears_Data.xlsx"
-            disabled={processes.upload.status === 'running'}
+            expectedFileName={productType ? productTypeConfig[productType].inputFile : "Please select product type first"}
+            disabled={processes.upload.status === 'running' || !productType}
           />
           {uploadedFile && (
             <div style={{ marginTop: '12px', padding: '12px', background: '#f0fdf4', borderRadius: '8px' }}>
@@ -1240,6 +1413,102 @@ const ArrearsDashboard = ({ user, onLogout }) => {
               >
                 <Mail size={16} />
                 Send Emails
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Type Confirmation Modal */}
+      {showProductConfirmModal && selectedProductData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <span style={{ fontSize: '32px' }}>{selectedProductData.config.icon}</span>
+              <div>
+                <h3 style={{ margin: 0, color: selectedProductData.config.color, fontSize: '20px' }}>
+                  Confirm Product Selection
+                </h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  {selectedProductData.config.name}
+                </p>
+              </div>
+            </div>
+
+            {/* Product Details */}
+            <div style={{ 
+              padding: '16px', 
+              background: `${selectedProductData.config.color}10`, 
+              borderRadius: '8px',
+              border: `1px solid ${selectedProductData.config.color}30`,
+              marginBottom: '20px'
+            }}>
+              <div style={{ marginBottom: '12px' }}>
+                <span style={{ fontWeight: '500', color: selectedProductData.config.color }}>Product Type:</span>
+                <span style={{ marginLeft: '8px', color: '#374151' }}>{selectedProductData.config.name}</span>
+              </div>
+              <div style={{ marginBottom: '12px' }}>
+                <span style={{ fontWeight: '500', color: selectedProductData.config.color }}>Expected Input File:</span>
+                <span style={{ marginLeft: '8px', color: '#374151', fontFamily: 'monospace' }}>
+                  {selectedProductData.config.inputFile}
+                </span>
+              </div>
+              <div>
+                <span style={{ fontWeight: '500', color: selectedProductData.config.color }}>Description:</span>
+                <span style={{ marginLeft: '8px', color: '#374151' }}>{selectedProductData.config.description}</span>
+              </div>
+            </div>
+
+            {/* Confirmation Message */}
+            <div style={{ 
+              padding: '12px', 
+              background: '#fffbeb', 
+              borderRadius: '6px',
+              border: '1px solid #fed7aa',
+              marginBottom: '24px'
+            }}>
+              <p style={{ margin: 0, color: '#92400e', fontSize: '14px' }}>
+                This will configure the system for <strong>{selectedProductData.config.name}</strong> arrears processing. 
+                Make sure you have the correct input file ready.
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleProductCancel}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <X size={16} />
+                Cancel
+              </button>
+              <button
+                onClick={handleProductConfirm}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} />
+                Confirm Selection
               </button>
             </div>
           </div>

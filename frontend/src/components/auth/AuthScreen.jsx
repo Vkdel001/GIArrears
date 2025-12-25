@@ -32,7 +32,7 @@ const AuthScreen = ({ onLogin }) => {
     } catch (error) {
       console.error('OTP Error:', error);
       if (error.code === 'ERR_NETWORK') {
-        setError('Cannot connect to server. Please ensure backend is running on port 3001.');
+        setError('Cannot connect to server. Please check your connection and try again.');
       } else {
         setError(error.response?.data?.error || 'Failed to send OTP. Please check if backend is running.');
       }
