@@ -21,7 +21,7 @@ except ImportError:
 
 def test_pdf_files():
     """Test individual PDF files to check if they're readable using PyMuPDF"""
-    input_folder = "NonMotor_L0"
+    input_folder = "Motor_L0"
     pdf_files = glob.glob(os.path.join(input_folder, "*.pdf"))
     
     if not pdf_files:
@@ -58,13 +58,26 @@ def merge_motor_pdfs():
     # Check if input folder exists
     if not os.path.exists(input_folder):
         print(f"❌ Error: Input folder '{input_folder}' not found!")
-        print("Please run the Motor_L0.py script first to generate PDFs.")
+        print("Please run the NonMotor_L0.py script first to generate PDFs.")
         return
     
     # Create output folder if it doesn't exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
         print(f"📁 Created output folder: {output_folder}")
+    
+    # CLEANUP: Delete all old merged PDF files before creating new ones
+    print(f"🗑️ Cleaning up old merged PDFs from {output_folder}...")
+    try:
+        old_merged_files = [f for f in os.listdir(output_folder) if f.endswith('.pdf')]
+        for old_file in old_merged_files:
+            os.remove(os.path.join(output_folder, old_file))
+        if old_merged_files:
+            print(f"🗑️ Removed {len(old_merged_files)} old merged PDF files")
+        else:
+            print(f"🗑️ No old merged PDF files found to remove")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not clean up old merged files: {str(e)}")
     
     # Find all PDF files in the input folder
     pdf_files = glob.glob(os.path.join(input_folder, "*.pdf"))

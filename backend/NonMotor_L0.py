@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# NICL Motor Insurance Arrears Letter Generation Script
+# NICL Non-Motors Insurance Arrears Letter Generation Script
 import pandas as pd
 import sys
 import io
@@ -70,7 +70,7 @@ except Exception as e:
     sys.exit(1)
 
 # Create output folder
-output_folder = "Motor_L0"
+output_folder = "Motor_L0"  # Use Motor_L0 folder for consistency with backend config
 if len(sys.argv) > 1:
     for i, arg in enumerate(sys.argv):
         if arg == '--output' and i + 1 < len(sys.argv):
@@ -78,7 +78,40 @@ if len(sys.argv) > 1:
             break
 
 os.makedirs(output_folder, exist_ok=True)
-print(f"[INFO] Using output folder: {output_folder}")# Define custom paragraph styles
+print(f"[INFO] Using output folder: {output_folder}")
+
+# CLEANUP: Delete all old PDF files from output folder before generation
+print(f"[CLEANUP] Removing old PDF files from {output_folder}...")
+try:
+    if os.path.exists(output_folder):
+        old_files = [f for f in os.listdir(output_folder) if f.endswith('.pdf')]
+        for old_file in old_files:
+            os.remove(os.path.join(output_folder, old_file))
+        if old_files:
+            print(f"[CLEANUP] Removed {len(old_files)} old PDF files")
+        else:
+            print(f"[CLEANUP] No old PDF files found to remove")
+    else:
+        print(f"[CLEANUP] Output folder doesn't exist yet, will be created")
+except Exception as e:
+    print(f"[WARNING] Could not clean up old files: {str(e)}")
+
+# Also cleanup old merged PDFs
+merge_folder = "Motor_L0_Merge"
+print(f"[CLEANUP] Removing old merged PDF files from {merge_folder}...")
+try:
+    if os.path.exists(merge_folder):
+        old_merged_files = [f for f in os.listdir(merge_folder) if f.endswith('.pdf')]
+        for old_file in old_merged_files:
+            os.remove(os.path.join(merge_folder, old_file))
+        if old_merged_files:
+            print(f"[CLEANUP] Removed {len(old_merged_files)} old merged PDF files")
+        else:
+            print(f"[CLEANUP] No old merged PDF files found to remove")
+    else:
+        print(f"[CLEANUP] Merge folder doesn't exist yet")
+except Exception as e:
+    print(f"[WARNING] Could not clean up old merged files: {str(e)}")# Define custom paragraph styles
 styles = {}
 
 styles['BodyText'] = ParagraphStyle(
@@ -569,12 +602,17 @@ for index, row in df.iterrows():
     
     pol_no = str(row.get('Policy No', '')) if pd.notna(row.get('Policy No', '')) else ''
     # Note: Column name has trailing space in Excel file
-    outstanding_amount = row.get('Outstanding Amount ', 0)
+    outstanding_amount = row.get('Outstanding Amount ', 0) if pd.notna(row.get('Outstanding Amount ', 0)) else 0
     start_date = row.get('Start Date', '')
     end_date = row.get('End Date', '')
     ph_email = str(row.get('PH_EMAIL', '')) if pd.notna(row.get('PH_EMAIL', '')) else ''
     ph_mobile = str(row.get('Policy Holder Mobile Number', '')) if pd.notna(row.get('Policy Holder Mobile Number', '')) else ''
     payor_national_id = str(row.get('Policy Holder NID', '')) if pd.notna(row.get('Policy Holder NID', '')) else ''
+    
+    # Debug output for first few rows
+    if current_row <= 3:
+        print(f"[DEBUG] Row {current_row}: Policy No='{pol_no}', Policy Holder='{policy_holder}', Outstanding Amount={outstanding_amount}")
+        print(f"[DEBUG] Row {current_row}: Address1='{addr1}', Address2='{addr2}', Address3='{addr3}'")
     
     # Map product name to simplified type for subject line
     product_type = map_product_name(product_name)
@@ -710,7 +748,7 @@ for index, row in df.iterrows():
             "SetAdditionalBillNumber": True,
             "AdditionalRequiredBillNumber": False,
             "AdditionalBillNumber": str(pol_no).replace('/', '.'),
-            "SetAdditionalMobileNo": True,
+            "SetAdditionalMobileNo": False,
             "AdditionalRequiredMobileNo": False,
             "AdditionalMobileNo": str(mobile_no),
             "SetAdditionalStoreLabel": False,
@@ -759,7 +797,7 @@ for index, row in df.iterrows():
         print(f"⚠️ Error generating QR for {full_customer_name}: {str(e)}")
     
     # Create PDF with sequence number for Excel order preservation
-    pdf_filename = f"{output_folder}/{sequence_num}_Motor_L0_{safe_policy}_{safe_name}_arrears.pdf"
+    pdf_filename = f"{output_folder}/{sequence_num}_NonMotor_L0_{safe_policy}_{safe_name}_arrears.pdf"
     c = canvas.Canvas(pdf_filename, pagesize=A4)
     width, height = A4
     margin = 50
