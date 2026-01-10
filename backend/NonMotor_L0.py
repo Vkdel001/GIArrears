@@ -617,6 +617,14 @@ for index, row in df.iterrows():
     # Map product name to simplified type for subject line
     product_type = map_product_name(product_name)
     
+    # Determine merchant ID and banking text based on product type
+    merchant_id = 155 if product_type == "MOTOR" else 171
+    
+    if product_type == "MOTOR":
+        banking_text = "We therefore kindly invite you to settle the outstanding amount through credit transfer to any of the following bank accounts: Maubank (060100056724), MCB (000444155732) or SBM (61030100056822)."
+    else:
+        banking_text = "We therefore kindly invite you to settle the outstanding amount through credit transfer to MCB bank account number 000454749716"
+    
     # Skip if essential data is missing
     if not pol_no or not policy_holder:
         df.at[index, 'COMMENTS'] = 'Missing essential data (Policy No or Policy Holder)'
@@ -736,7 +744,7 @@ for index, row in df.iterrows():
         
         # API payload for QR generation (Motor uses Merchant ID 155)
         payload = {
-            "MerchantId": 171,
+            "MerchantId": merchant_id,
             "SetTransactionAmount": False,
             "TransactionAmount": 0,
             "SetConvenienceIndicatorTip": False,
@@ -935,8 +943,8 @@ for index, row in df.iterrows():
     # Add breathing space after point 3
     y_pos -= 6
     
-    # Add banking information (moved after reminder points) - Motor specific accounts
-    banking_para = "We therefore kindly invite you to settle the outstanding amount through credit transfer to MCB bank account number 000454749716 "
+    # Add banking information (moved after reminder points) - Conditional based on product type
+    banking_para = banking_text
     y_pos = add_paragraph(c, banking_para, styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space after banking information
