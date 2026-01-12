@@ -592,8 +592,13 @@ for index, row in df.iterrows():
     print(f"[PROCESSING] Row {current_row} of {len(df)}")
     
     # Extract data from Excel columns (Motor format)
-    # Note: Column is spelled "Tittle" (with double 't') in Excel
-    title = str(row.get('Tittle', '')) if pd.notna(row.get('Tittle', '')) else ''
+    # Note: Column is spelled "Tittle" (with double 't') in Excel - handle case variations
+    title = ''
+    for title_col in ['Tittle', 'tittle', 'Title', 'title']:
+        if title_col in row and pd.notna(row.get(title_col, '')):
+            title = str(row.get(title_col, ''))
+            break
+    
     policy_holder = str(row.get('Policy Holder', '')) if pd.notna(row.get('Policy Holder', '')) else ''
     product_name = str(row.get('Product Name', '')) if pd.notna(row.get('Product Name', '')) else ''
     addr1 = str(row.get('Address 1', '')) if pd.notna(row.get('Address 1', '')) else ''
