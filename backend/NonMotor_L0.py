@@ -606,8 +606,13 @@ for index, row in df.iterrows():
     addr3 = str(row.get('Address 3', '')) if pd.notna(row.get('Address 3', '')) else ''
     
     pol_no = str(row.get('Policy No', '')) if pd.notna(row.get('Policy No', '')) else ''
-    # Note: Column name has trailing space in Excel file
-    outstanding_amount = row.get('Outstanding Amount ', 0) if pd.notna(row.get('Outstanding Amount ', 0)) else 0
+    # Note: Column name can be 'Outstanding Amount ' (with space) or 'Outstanding Amount' (without space)
+    outstanding_amount = 0
+    if 'Outstanding Amount ' in row and pd.notna(row.get('Outstanding Amount ', 0)):
+        outstanding_amount = row.get('Outstanding Amount ', 0)
+    elif 'Outstanding Amount' in row and pd.notna(row.get('Outstanding Amount', 0)):
+        outstanding_amount = row.get('Outstanding Amount', 0)
+    
     start_date = row.get('Start Date', '')
     end_date = row.get('End Date', '')
     ph_email = str(row.get('PH_EMAIL', '')) if pd.notna(row.get('PH_EMAIL', '')) else ''
