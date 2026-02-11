@@ -26,44 +26,83 @@ const PRODUCT_CONFIG = {
     health: {
         name: 'Health Insurance',
         inputFile: 'Extracted_Arrears_Data.xlsx',
-        generator: 'recovery_processor.py',
-        merger: 'arrears_merger.py',
+        generators: {
+            active: 'recovery_processor.py',
+            inactive: 'Inactive_Policy_Arrears.py'
+        },
+        mergers: {
+            active: 'arrears_merger.py',
+            inactive: 'merge_arrears_pdfs.py'
+        },
         outputFolders: {
-            L0: '../L0',
-            L1: '../L1', 
-            L2: '../L2',
-            MED: '../output_mise_en_demeure'
+            active: {
+                L0: '../L0',
+                L1: '../L1', 
+                L2: '../L2',
+                MED: '../output_mise_en_demeure'
+            },
+            inactive: {
+                L0: '../Inactive_Health'
+            }
         },
         mergedFolders: {
-            L0: '../L0_Merge',
-            L1: '../L1_Merge',
-            L2: '../L2_Merge', 
-            MED: '../MED_Merge'
+            active: {
+                L0: '../L0_Merge',
+                L1: '../L1_Merge',
+                L2: '../L2_Merge', 
+                MED: '../MED_Merge'
+            },
+            inactive: {
+                L0: '../Inactive_Health_Merge'
+            }
         }
     },
     nonmotor: {
         name: 'Non-Motors Insurance',
         inputFile: 'NonMotor_Arrears.xlsx',
-        generator: 'NonMotor_L0.py',
-        merger: 'merge_nonmotor_pdfs.py',
+        generators: {
+            active: 'NonMotor_L0.py',
+            inactive: 'Inactive_Policy_Arrears.py'
+        },
+        mergers: {
+            active: 'merge_nonmotor_pdfs.py',
+            inactive: 'merge_arrears_pdfs.py'
+        },
         outputFolders: {
-            L0: '../Motor_L0',
-            L1: '../Motor_L1',
-            L2: '../Motor_L2',
-            MED: '../Motor_MED'
+            active: {
+                L0: '../Motor_L0',
+                L1: '../Motor_L1',
+                L2: '../Motor_L2',
+                MED: '../Motor_MED'
+            },
+            inactive: {
+                L0: '../Inactive_NonMotor'
+            }
         },
         mergedFolders: {
-            L0: '../Motor_L0_Merge',
-            L1: '../Motor_L1_Merge',
-            L2: '../Motor_L2_Merge',
-            MED: '../Motor_MED_Merge'
+            active: {
+                L0: '../Motor_L0_Merge',
+                L1: '../Motor_L1_Merge',
+                L2: '../Motor_L2_Merge',
+                MED: '../Motor_MED_Merge'
+            },
+            inactive: {
+                L0: '../Inactive_NonMotor_Merge'
+            }
         }
     }
 };
 
 // Helper function to get product config
-const getProductConfig = (productType) => {
-    return PRODUCT_CONFIG[productType] || PRODUCT_CONFIG.health;
+const getProductConfig = (productType, policyStatus = 'active') => {
+    const config = PRODUCT_CONFIG[productType] || PRODUCT_CONFIG.health;
+    return {
+        ...config,
+        generator: config.generators[policyStatus],
+        merger: config.mergers[policyStatus],
+        outputFolders: config.outputFolders[policyStatus],
+        mergedFolders: config.mergedFolders[policyStatus]
+    };
 };
 
 // Configure multer for arrears file uploads
@@ -74,9 +113,10 @@ const arrearsStorage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        // Get product type from request body or default to health
+        // Get product type and policy status from request body
         const productType = req.body.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.body.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         cb(null, config.inputFile);
     }
 });
@@ -224,10 +264,11 @@ router.post('/upload-excel', arrearsUpload.single('file'), async (req, res) => {
         }
 
         const productType = req.body.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.body.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
 
         console.log(`📁 ${config.name} Excel uploaded by ${req.session.user}: ${req.file.originalname}`);
-        console.log(`🔧 Product Type: ${productType}, Expected file: ${config.inputFile}`);
+        console.log(`🔧 Product Type: ${productType}, Policy Status: ${policyStatus}, Expected file: ${config.inputFile}`);
 
         // Analyze Excel file for record count and recovery distribution
         let recordCount = 0;
@@ -390,7 +431,8 @@ except Exception as e:
             size: req.file.size,
             recordCount: recordCount,
             recoveryDistribution: recoveryDistribution,
-            productType: productType
+            productType: productType,
+            policyStatus: policyStatus
         });
 
     } catch (error) {
@@ -403,7 +445,8 @@ except Exception as e:
 router.post('/generate-letters', async (req, res) => {
     try {
         const productType = req.body.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.body.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         const scriptPath = path.join(__dirname, '..', config.generator);
 
         // Check if script exists
@@ -417,19 +460,19 @@ router.post('/generate-letters', async (req, res) => {
             path.join(__dirname, '../uploads/arrears', config.inputFile)
         ];
 
-        let excelExists = false;
-        for (const excelPath of excelPaths) {
-            if (await fs.pathExists(excelPath)) {
-                excelExists = true;
+        let excelPath = null;
+        for (const testPath of excelPaths) {
+            if (await fs.pathExists(testPath)) {
+                excelPath = testPath;
                 break;
             }
         }
 
-        if (!excelExists) {
+        if (!excelPath) {
             return res.status(400).json({ error: `Please upload ${config.inputFile} file first` });
         }
 
-        console.log(`🔄 Starting ${config.name} letter generation for ${req.session.user}`);
+        console.log(`🔄 Starting ${config.name} ${policyStatus} letter generation for ${req.session.user}`);
         updateProgress('running', 5, `Cleaning up old ${config.name} files...`, 'generate');
 
         // CLEANUP: Delete all old PDF files from output folders before generation
@@ -507,7 +550,16 @@ router.post('/generate-letters', async (req, res) => {
             });
         }, 1000); // Update every second
 
-        const pythonProcess = spawn('python', [scriptPath], {
+        // Prepare script arguments based on policy status
+        let scriptArgs = [scriptPath];
+        
+        if (policyStatus === 'inactive') {
+            // For inactive policies, pass product type and input file
+            scriptArgs.push('--product-type', productType);
+            scriptArgs.push('--input-file', excelPath);
+        }
+
+        const pythonProcess = spawn('python', scriptArgs, {
             cwd: path.dirname(scriptPath)
         });
 
@@ -590,7 +642,8 @@ router.post('/generate-letters', async (req, res) => {
 router.post('/merge-letters', async (req, res) => {
     try {
         const productType = req.body.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.body.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         const scriptPath = path.join(__dirname, '..', config.merger);
 
         // Check if script exists
@@ -598,7 +651,7 @@ router.post('/merge-letters', async (req, res) => {
             return res.status(500).json({ error: `${config.merger} script not found` });
         }
 
-        console.log(`🔄 Starting ${config.name} letter merging for ${req.session.user}`);
+        console.log(`🔄 Starting ${config.name} ${policyStatus} letter merging for ${req.session.user}`);
         updateProgress('running', 5, `Cleaning up old ${config.name} merged files...`, 'merge');
 
         // CLEANUP: Delete all old merged PDFs before creating new ones
@@ -650,7 +703,18 @@ router.post('/merge-letters', async (req, res) => {
             });
         }, 1000); // Update every second
 
-        const pythonProcess = spawn('python', [scriptPath], {
+        // Prepare script arguments based on policy status and merger type
+        let scriptArgs = [scriptPath];
+        
+        if (config.merger === 'merge_arrears_pdfs.py') {
+            // For parameterized merger, pass input and output folders
+            const inputFolder = Object.values(config.outputFolders)[0].replace('../', '');
+            const outputFolder = Object.values(config.mergedFolders)[0].replace('../', '');
+            scriptArgs.push('--input', inputFolder);
+            scriptArgs.push('--output', outputFolder);
+        }
+
+        const pythonProcess = spawn('python', scriptArgs, {
             cwd: path.dirname(scriptPath)
         });
 
@@ -830,7 +894,8 @@ router.post('/send-emails', async (req, res) => {
 router.get('/files', async (req, res) => {
     try {
         const productType = req.query.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.query.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         
         const files = {
             individual: {
@@ -908,7 +973,8 @@ router.get('/download/individual/:type/:filename', async (req, res) => {
     try {
         const { type, filename } = req.params;
         const productType = req.query.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.query.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
 
         if (!config.outputFolders[type]) {
             return res.status(400).json({ error: 'Invalid recovery type' });
@@ -937,7 +1003,8 @@ router.get('/download/merged/:type/:filename', async (req, res) => {
     try {
         const { type, filename } = req.params;
         const productType = req.query.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.query.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
 
         if (!config.mergedFolders[type]) {
             return res.status(400).json({ error: 'Invalid recovery type' });
@@ -966,7 +1033,8 @@ router.get('/download/all-individual/:type', async (req, res) => {
     try {
         const { type } = req.params;
         const productType = req.query.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.query.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
 
         if (!config.outputFolders[type]) {
             return res.status(400).json({ error: 'Invalid recovery type' });
@@ -1053,7 +1121,8 @@ router.get('/download/all-individual/:type', async (req, res) => {
 router.get('/status', async (req, res) => {
     try {
         const productType = req.query.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.query.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         
         const status = {
             upload: false,
@@ -1062,6 +1131,7 @@ router.get('/status', async (req, res) => {
             canSendEmails: false,
             currentStep: 1,
             productType: productType,
+            policyStatus: policyStatus,
             recoveryStats: {
                 L0: { individual: 0, merged: 0 },
                 L1: { individual: 0, merged: 0 },
@@ -1140,9 +1210,10 @@ router.get('/progress', (req, res) => {
 router.post('/reset', async (req, res) => {
     try {
         const productType = req.body.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.body.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         
-        console.log(`🔄 Resetting ${config.name} workflow for ${req.session.user}`);
+        console.log(`🔄 Resetting ${config.name} ${policyStatus} workflow for ${req.session.user}`);
         
         // Reset progress
         currentProgress = {
@@ -1216,9 +1287,10 @@ router.post('/reset', async (req, res) => {
 router.post('/cleanup', async (req, res) => {
     try {
         const productType = req.body.productType || 'health';
-        const config = getProductConfig(productType);
+        const policyStatus = req.body.policyStatus || 'active';
+        const config = getProductConfig(productType, policyStatus);
         
-        console.log(`🗑️ Manual cleanup requested for ${config.name} by ${req.session.user}`);
+        console.log(`🗑️ Manual cleanup requested for ${config.name} ${policyStatus} by ${req.session.user}`);
         
         // Force cleanup of all PDF files
         const allFolders = [

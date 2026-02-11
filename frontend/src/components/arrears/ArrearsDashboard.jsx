@@ -11,6 +11,12 @@ const ArrearsDashboard = ({ user, onLogout }) => {
   const [showProductConfirmModal, setShowProductConfirmModal] = useState(false);
   const [selectedProductData, setSelectedProductData] = useState(null);
   
+  // Policy status selection state
+  const [policyStatus, setPolicyStatus] = useState('');
+  const [showPolicyStatusConfirmModal, setShowPolicyStatusConfirmModal] = useState(false);
+  const [selectedPolicyStatusData, setSelectedPolicyStatusData] = useState(null);
+  const [policyStatusConfirmText, setPolicyStatusConfirmText] = useState('');
+  
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [recordCount, setRecordCount] = useState(0);
@@ -64,9 +70,10 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   const checkWorkflowStatus = async (autoLoad = false, isInitialLoad = false) => {
     if (!productType && !isInitialLoad) return; // Don't check status without product type
+    if (!policyStatus && !isInitialLoad) return; // Don't check status without policy status
     
     try {
-      const response = await arrearsAPI.getStatus(productType || 'health');
+      const response = await arrearsAPI.getStatus(productType || 'health', policyStatus || 'active');
       const status = response.data;
       
       // Check if there's existing data
@@ -138,10 +145,10 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   // Poll for progress updates
   const pollProgress = async () => {
-    if (!productType) return;
+    if (!productType || !policyStatus) return;
     
     try {
-      const response = await arrearsAPI.getProgress(productType);
+      const response = await arrearsAPI.getProgress(productType, policyStatus);
       const progress = response.data;
       
       if (progress.step && progress.status !== 'idle') {
@@ -178,11 +185,15 @@ const ArrearsDashboard = ({ user, onLogout }) => {
       alert('Please select a product type first');
       return;
     }
+    if (!policyStatus) {
+      alert('Please select a policy status first');
+      return;
+    }
     
     updateProcess('upload', 'running', 0);
     
     try {
-      const response = await arrearsAPI.uploadExcel(file, productType);
+      const response = await arrearsAPI.uploadExcel(file, productType, policyStatus);
       const recordCount = response.data.recordCount || 0;
       const recoveryDistribution = response.data.recoveryDistribution || {};
       
@@ -206,7 +217,7 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     updateProcess('generate', 'running', 0);
     
     try {
-      await arrearsAPI.generateLetters(productType);
+      await arrearsAPI.generateLetters(productType, policyStatus);
       // Show completion modal when generation actually completes
       updateProcess('generate', 'completed', 100, 'Letters generated successfully', {}, true);
       setCurrentStep(3);
@@ -222,7 +233,7 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     updateProcess('merge', 'running', 0);
     
     try {
-      await arrearsAPI.mergeLetters(productType);
+      await arrearsAPI.mergeLetters(productType, policyStatus);
       // Show completion modal when merge actually completes
       updateProcess('merge', 'completed', 100, 'Letters merged successfully', {}, true);
       setCurrentStep(4);
@@ -267,11 +278,11 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   // Load files list
   const loadFiles = async () => {
-    if (!productType) return;
+    if (!productType || !policyStatus) return;
     
     setFilesLoading(true);
     try {
-      const response = await arrearsAPI.getFiles(productType);
+      const response = await arrearsAPI.getFiles(productType, policyStatus);
       setFiles(response.data);
     } catch (error) {
       console.error('Failed to load files:', error);
@@ -282,15 +293,15 @@ const ArrearsDashboard = ({ user, onLogout }) => {
 
   // Handle file downloads
   const handleDownloadIndividual = (type, filename) => {
-    arrearsAPI.downloadIndividual(type, filename, productType);
+    arrearsAPI.downloadIndividual(type, filename, productType, policyStatus);
   };
 
   const handleDownloadMerged = (type, filename) => {
-    arrearsAPI.downloadMerged(type, filename, productType);
+    arrearsAPI.downloadMerged(type, filename, productType, policyStatus);
   };
 
   const handleDownloadAllIndividual = (type) => {
-    arrearsAPI.downloadAllIndividual(type, productType);
+    arrearsAPI.downloadAllIndividual(type, productType, policyStatus);
   };
 
   // Upload modal handlers
@@ -318,7 +329,7 @@ const ArrearsDashboard = ({ user, onLogout }) => {
       try {
         // Call backend reset API if product type is selected
         if (productType) {
-          await arrearsAPI.resetWorkflow(productType);
+          await arrearsAPI.resetWorkflow(productType, policyStatus || 'active');
         }
         
         // Reset all state
@@ -350,11 +361,14 @@ const ArrearsDashboard = ({ user, onLogout }) => {
         setShowExistingDataNotice(false);
         setShowEmailConfirmModal(false);
         setShowProductConfirmModal(false);
+        setShowPolicyStatusConfirmModal(false);
         setUploadModalData(null);
         setCompletionData(null);
         setExistingDataInfo(null);
         setSelectedProductData(null);
+        setSelectedPolicyStatusData(null);
         setEmailConfirmText('');
+        setPolicyStatusConfirmText('');
         
         // Reset the initial load flag so the modal can show again if needed
         setHasHandledInitialLoad(false);
@@ -425,6 +439,24 @@ const ArrearsDashboard = ({ user, onLogout }) => {
     }
   };
 
+  // Policy status configurations
+  const policyStatusConfig = {
+    active: {
+      name: 'Active Policies',
+      icon: '⚡',
+      color: '#059669',
+      description: 'Standard arrears reminder letters (L0, L1, L2, MED)',
+      confirmText: 'Active'
+    },
+    inactive: {
+      name: 'Inactive Policies',
+      icon: '🔴',
+      color: '#dc2626',
+      description: 'Settlement options with legal notice',
+      confirmText: 'NotActive'
+    }
+  };
+
   // Product type selection handlers
   const handleProductTypeSelect = (type) => {
     const config = productTypeConfig[type];
@@ -448,6 +480,37 @@ const ArrearsDashboard = ({ user, onLogout }) => {
   const handleProductCancel = () => {
     setShowProductConfirmModal(false);
     setSelectedProductData(null);
+  };
+
+  // Policy status selection handlers
+  const handlePolicyStatusSelect = (status) => {
+    const config = policyStatusConfig[status];
+    setSelectedPolicyStatusData({
+      status,
+      config
+    });
+    setPolicyStatusConfirmText('');
+    setShowPolicyStatusConfirmModal(true);
+  };
+
+  const handlePolicyStatusConfirm = () => {
+    if (selectedPolicyStatusData) {
+      const requiredText = selectedPolicyStatusData.config.confirmText;
+      if (policyStatusConfirmText.trim().toLowerCase() === requiredText.toLowerCase()) {
+        setPolicyStatus(selectedPolicyStatusData.status);
+        setShowPolicyStatusConfirmModal(false);
+        setSelectedPolicyStatusData(null);
+        setPolicyStatusConfirmText('');
+        // Reset workflow when changing policy status
+        handleResetWorkflow(false);
+      }
+    }
+  };
+
+  const handlePolicyStatusCancel = () => {
+    setShowPolicyStatusConfirmModal(false);
+    setSelectedPolicyStatusData(null);
+    setPolicyStatusConfirmText('');
   };
 
   return (
@@ -553,25 +616,116 @@ const ArrearsDashboard = ({ user, onLogout }) => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontSize: '24px' }}>{productTypeConfig[productType].icon}</span>
+              {policyStatus && (
+                <span style={{ fontSize: '24px' }}>{policyStatusConfig[policyStatus].icon}</span>
+              )}
               <div>
                 <h3 style={{ margin: 0, color: productTypeConfig[productType].color }}>
                   {productTypeConfig[productType].name} - Arrears Processing
+                  {policyStatus && (
+                    <span style={{ 
+                      marginLeft: '12px', 
+                      fontSize: '16px',
+                      color: policyStatusConfig[policyStatus].color,
+                      padding: '4px 12px',
+                      background: `${policyStatusConfig[policyStatus].color}20`,
+                      borderRadius: '6px'
+                    }}>
+                      {policyStatusConfig[policyStatus].name}
+                    </span>
+                  )}
                 </h3>
                 <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
                   Input file: {productTypeConfig[productType].inputFile}
+                  {policyStatus && (
+                    <span style={{ marginLeft: '12px' }}>
+                      • {policyStatusConfig[policyStatus].description}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
-            <button 
-              onClick={() => {
-                setProductType('');
-                handleResetWorkflow(false);
-              }}
-              className="btn btn-secondary"
-              style={{ fontSize: '12px', padding: '6px 12px' }}
-            >
-              Change Product Type
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {policyStatus && (
+                <button 
+                  onClick={() => {
+                    setPolicyStatus('');
+                    handleResetWorkflow(false);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px', padding: '6px 12px' }}
+                >
+                  Change Policy Status
+                </button>
+              )}
+              <button 
+                onClick={() => {
+                  setProductType('');
+                  setPolicyStatus('');
+                  handleResetWorkflow(false);
+                }}
+                className="btn btn-secondary"
+                style={{ fontSize: '12px', padding: '6px 12px' }}
+              >
+                Change Product Type
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Policy Status Selection */}
+      {productType && !policyStatus && (
+        <div className="card" style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+            <AlertTriangle size={24} style={{ color: 'var(--primary-color)' }} />
+            <div>
+              <h3 style={{ margin: 0, color: 'var(--primary-color)' }}>Select Policy Status</h3>
+              <p style={{ margin: 0, color: '#6b7280' }}>Choose whether you're processing active or inactive policies</p>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+            {Object.entries(policyStatusConfig).map(([status, config]) => (
+              <div
+                key={status}
+                onClick={() => handlePolicyStatusSelect(status)}
+                style={{
+                  padding: '20px',
+                  border: `2px solid ${config.color}30`,
+                  borderRadius: '12px',
+                  background: `${config.color}08`,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = `${config.color}60`;
+                  e.currentTarget.style.background = `${config.color}15`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = `${config.color}30`;
+                  e.currentTarget.style.background = `${config.color}08`;
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '32px' }}>{config.icon}</span>
+                  <div>
+                    <h4 style={{ margin: 0, color: config.color, fontSize: '18px' }}>{config.name}</h4>
+                    <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>{config.description}</p>
+                  </div>
+                </div>
+                <div style={{ 
+                  padding: '8px 12px', 
+                  background: `${config.color}20`, 
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: config.color,
+                  fontWeight: '500'
+                }}>
+                  {status === 'active' ? 'Multi-level recovery process' : 'Single settlement letter'}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -627,8 +781,15 @@ const ArrearsDashboard = ({ user, onLogout }) => {
             onFileSelect={handleFileUpload}
             acceptedTypes=".xlsx,.xls"
             expectedFileName={productType ? productTypeConfig[productType].inputFile : "Please select product type first"}
-            disabled={processes.upload.status === 'running' || !productType}
+            disabled={processes.upload.status === 'running' || !productType || !policyStatus}
           />
+          {!policyStatus && productType && (
+            <div style={{ marginTop: '12px', padding: '12px', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+              <p style={{ color: '#92400e', margin: 0, fontSize: '14px' }}>
+                ⚠️ Please select a policy status (Active or Inactive) before uploading the file.
+              </p>
+            </div>
+          )}
           {uploadedFile && (
             <div style={{ marginTop: '12px', padding: '12px', background: '#f0fdf4', borderRadius: '8px' }}>
               <p style={{ color: '#16a34a', margin: 0 }}>
@@ -1506,6 +1667,142 @@ const ArrearsDashboard = ({ user, onLogout }) => {
                 onClick={handleProductConfirm}
                 className="btn btn-primary"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <CheckCircle size={16} />
+                Confirm Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Policy Status Confirmation Modal */}
+      {showPolicyStatusConfirmModal && selectedPolicyStatusData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <span style={{ fontSize: '32px' }}>{selectedPolicyStatusData.config.icon}</span>
+              <div>
+                <h3 style={{ margin: 0, color: selectedPolicyStatusData.config.color, fontSize: '20px' }}>
+                  Confirm Policy Status Selection
+                </h3>
+                <p style={{ margin: '4px 0 0 0', color: '#6b7280', fontSize: '14px' }}>
+                  {selectedPolicyStatusData.config.name}
+                </p>
+              </div>
+            </div>
+
+            {/* Policy Status Details */}
+            <div style={{ 
+              padding: '16px', 
+              background: `${selectedPolicyStatusData.config.color}10`, 
+              borderRadius: '8px',
+              border: `1px solid ${selectedPolicyStatusData.config.color}30`,
+              marginBottom: '20px'
+            }}>
+              <div style={{ marginBottom: '12px' }}>
+                <span style={{ fontWeight: '500', color: selectedPolicyStatusData.config.color }}>Policy Status:</span>
+                <span style={{ marginLeft: '8px', color: '#374151' }}>{selectedPolicyStatusData.config.name}</span>
+              </div>
+              <div>
+                <span style={{ fontWeight: '500', color: selectedPolicyStatusData.config.color }}>Letter Type:</span>
+                <span style={{ marginLeft: '8px', color: '#374151' }}>{selectedPolicyStatusData.config.description}</span>
+              </div>
+            </div>
+
+            {/* Warning Message */}
+            <div style={{ 
+              padding: '12px', 
+              background: '#fef2f2', 
+              borderRadius: '6px',
+              border: '1px solid #fecaca',
+              marginBottom: '20px'
+            }}>
+              <p style={{ margin: '0 0 8px 0', color: '#dc2626', fontSize: '14px', fontWeight: '500' }}>
+                ⚠️ Important: This selection determines the letter format
+              </p>
+              <p style={{ margin: 0, color: '#dc2626', fontSize: '14px' }}>
+                {selectedPolicyStatusData.status === 'active' 
+                  ? 'Active policies will generate multi-level recovery letters (L0, L1, L2, MED).'
+                  : 'Inactive policies will generate settlement letters with legal notice and payment options.'}
+              </p>
+            </div>
+
+            {/* Confirmation Input */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '8px', 
+                color: '#374151', 
+                fontSize: '14px', 
+                fontWeight: '500' 
+              }}>
+                To confirm, please type: <strong>"{selectedPolicyStatusData.config.confirmText}"</strong> (case insensitive)
+              </label>
+              <input
+                type="text"
+                value={policyStatusConfirmText}
+                onChange={(e) => setPolicyStatusConfirmText(e.target.value)}
+                placeholder={selectedPolicyStatusData.config.confirmText}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  borderColor: policyStatusConfirmText.trim().toLowerCase() === selectedPolicyStatusData.config.confirmText.toLowerCase() ? '#10b981' : '#d1d5db'
+                }}
+                autoFocus
+              />
+              {policyStatusConfirmText.trim() !== '' && 
+               policyStatusConfirmText.trim().toLowerCase() !== selectedPolicyStatusData.config.confirmText.toLowerCase() && (
+                <p style={{ margin: '4px 0 0 0', color: '#dc2626', fontSize: '12px' }}>
+                  Text does not match. Please type: "{selectedPolicyStatusData.config.confirmText}"
+                </p>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handlePolicyStatusCancel}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <X size={16} />
+                Cancel
+              </button>
+              <button
+                onClick={handlePolicyStatusConfirm}
+                className="btn btn-primary"
+                disabled={policyStatusConfirmText.trim().toLowerCase() !== selectedPolicyStatusData.config.confirmText.toLowerCase()}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  opacity: policyStatusConfirmText.trim().toLowerCase() !== selectedPolicyStatusData.config.confirmText.toLowerCase() ? 0.5 : 1
+                }}
               >
                 <CheckCircle size={16} />
                 Confirm Selection
