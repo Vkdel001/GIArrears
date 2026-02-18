@@ -139,7 +139,7 @@ styles = {}
 styles['BodyText'] = ParagraphStyle(
     name='BodyText',
     fontName='Cambria',
-    fontSize=10.5,
+    fontSize=10,  # Reduced from 10.5 to 10
     leading=12,
     spaceAfter=3,
     alignment=TA_JUSTIFY
@@ -148,17 +148,17 @@ styles['BodyText'] = ParagraphStyle(
 styles['BoldText'] = ParagraphStyle(
     name='BoldText',
     fontName='Cambria-Bold',
-    fontSize=11,
-    leading=15,
-    spaceAfter=12
+    fontSize=10.5,  # Reduced from 11 to 10.5
+    leading=13,  # Reduced from 15 to 13
+    spaceAfter=10  # Reduced from 12 to 10
 )
 
 styles['AddressText'] = ParagraphStyle(
     name='AddressText',
     fontName='Cambria-Bold',
-    fontSize=10.5,
-    leading=12,
-    spaceAfter=3
+    fontSize=10,  # Reduced from 10.5 to 10
+    leading=11,  # Reduced from 12 to 11
+    spaceAfter=2  # Reduced from 3 to 2
 )
 
 styles['TableText'] = ParagraphStyle(
@@ -1040,9 +1040,9 @@ for index, row in df.iterrows():
     merchant_id = 155 if product_type == "MOTOR" else 171
     
     if product_type == "MOTOR":
-        banking_text = "We therefore kindly invite you to settle the outstanding amount through credit transfer to any of the following bank accounts: Maubank (060100056724), MCB (000444155732) or SBM (61030100056822)."
+        banking_text = "You are therefore kindly invited to settle the outstanding amount through credit transfer to any of the following bank accounts: Maubank (060100056724), MCB (000444155732) or SBM (61030100056822)."
     else:
-        banking_text = "We therefore kindly invite you to settle the outstanding amount through credit transfer to MCB bank account number 000454749716"
+        banking_text = "You are therefore kindly invited to settle the outstanding amount through credit transfer to MCB bank account number 000454749716"
     
     # Skip if essential data is missing
     if not pol_no or not policy_holder:
@@ -1264,7 +1264,7 @@ for index, row in df.iterrows():
     date_para = Paragraph(current_date, styles['BodyText'])
     date_para.wrapOn(c, content_width, height)
     date_para.drawOn(c, margin, y_pos - date_para.height)
-    y_pos -= date_para.height + 20
+    y_pos -= date_para.height + 8  # Reduced from 12 to 8
     
     # Store the starting position for address block (for I.sphere logo alignment)
     address_start_y = y_pos
@@ -1279,30 +1279,15 @@ for index, row in df.iterrows():
             addr_para.drawOn(c, margin, y_pos - addr_para.height)
             y_pos -= addr_para.height + 3
     
-    # Add NIC I.sphere app logo (positioned in the designated space to the right)
-    if os.path.exists("isphere_logo.jpg"):
-        isphere_img = ImageReader("isphere_logo.jpg")
-        isphere_width = 200  # Slightly smaller to fit nicely in the space
-        isphere_height = isphere_width * (isphere_img.getSize()[1] / isphere_img.getSize()[0])
-        
-        # Calculate proper position: right side, well below NIC logo, aligned with address area
-        # Position it in the space between NIC logo bottom and address content
-        nic_logo_bottom = height - margin - 120 * (120/120) - 12  # Approximate NIC logo bottom
-        isphere_x = width - margin - isphere_width  # Right aligned with margin
-        isphere_y = nic_logo_bottom - 60  # 60px below NIC logo for proper clearance
-        
-        c.drawImage(isphere_img, isphere_x, isphere_y, width=isphere_width, height=isphere_height)
-        print(f"✅ NIC I.sphere logo positioned professionally in designated space")
-    else:
-        print(f"⚠️ Warning: isphere_logo.jpg not found - skipping NIC I.sphere logo")
+    # I.sphere logo removed to save space and push content up
     
-    y_pos -= 40  # Increased space after address to push text content down
+    y_pos -= 8  # Reduced from 12 to 8 to push "Dear Valued Customer" up further
     
     # Add salutation
     y_pos = add_paragraph(c, "Dear Valued Customer,", styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space after salutation
-    y_pos -= 8
+    y_pos -= 4  # Reduced from 6 to 4
     
     # Add subject line (uses subject_product which is product_label for health, product_type for non-motor)
     subject_text = f"<font name='Cambria-Bold'>RE: FIRST NOTICE - ARREARS ON {subject_product} INSURANCE POLICY - Policy Number: {pol_no}</font>"
@@ -1354,18 +1339,11 @@ for index, row in df.iterrows():
     y_pos -= table_height + 12
     
     # Add settlement reminder section (inactive policy format)
-    reminder_intro = "We respectfully remind you that all claims submitted under the above insurance policy have been duly settled by the Company in accordance with the policy terms and conditions. We therefore kindly invite you to regularise the account by promptly settling the above amount in arrears through one of the following options:"
+    reminder_intro = "We respectfully remind you that any claims submitted under the above insurance policy have been duly settled by the Company in accordance with the policy terms and conditions. You are therefore kindly invited to regularise the account by promptly settling the above amount in arrears through one of the following options:"
     y_pos = add_paragraph(c, reminder_intro, styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space after reminder intro
-    y_pos -= 10
-    
-    # Add separator line
-    y_pos -= 5
-    c.setStrokeColor(colors.Color(0.7, 0.7, 0.7))
-    c.setLineWidth(1)
-    c.line(margin, y_pos, width - margin, y_pos)
-    y_pos -= 15
+    y_pos -= 8  # Reduced from 12 to 8
     
     # Option 1 - Full and Immediate Settlement
     option1_title = "<font name='Cambria-Bold'>Option 1 - Full and Immediate Settlement</font>"
@@ -1411,17 +1389,13 @@ for index, row in df.iterrows():
             zwenn_height = zwenn_width * (zwenn_img.getSize()[1] / zwenn_img.getSize()[0])
             zwenn_x = page_center_x - (zwenn_width / 2)
             c.drawImage(zwenn_img, zwenn_x, y_pos - zwenn_height, width=zwenn_width, height=zwenn_height)
-            y_pos -= zwenn_height + 8
+            y_pos -= zwenn_height + 4  # Reduced from 8 to 4
         else:
             print(f"⚠️ Warning: zwennPay.jpg not found - skipping ZwennPay logo")
-            y_pos -= 8
+            y_pos -= 4  # Reduced from 8 to 4
     
-    # Add separator line after Option 1
-    y_pos -= 10
-    c.setStrokeColor(colors.Color(0.7, 0.7, 0.7))
-    c.setLineWidth(1)
-    c.line(margin, y_pos, width - margin, y_pos)
-    y_pos -= 15
+    # Add spacing after Option 1 (no separator line)
+    y_pos -= 6  # Reduced from 8 to 6
     
     # Option 2 - Credit Arrangement
     option2_title = "<font name='Cambria-Bold'>Option 2 - Credit Arrangement</font>"
@@ -1431,53 +1405,49 @@ for index, row in df.iterrows():
     y_pos = add_paragraph(c, option2_text, styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space
-    y_pos -= 6
+    y_pos -= 3  # Reduced from 4 to 3
     
     # Add contact information for credit arrangement
     contact_para = "To proceed with this option, please contact our Arrears Recovery Team on <font name='Cambria-Bold'>602 3000</font> or via email at <font color='black'>giarrearsrecovery@nicl.mu</font> to complete the required arrangement and formalities."
     y_pos = add_paragraph(c, contact_para, styles['BodyText'], margin, y_pos, content_width)
     
-    # Add separator line before legal warning
-    y_pos -= 15
-    c.setStrokeColor(colors.Color(0.7, 0.7, 0.7))
-    c.setLineWidth(1)
-    c.line(margin, y_pos, width - margin, y_pos)
-    y_pos -= 15
+    # Add spacing before legal warning (no separator line)
+    y_pos -= 8  # Reduced from 10 to 8
     
     # Add legal warning (bold and italic)
     legal_warning = "<font name='Cambria-Bold'><i>Should the outstanding balance remain unpaid 30 days after issuance of this letter, we shall unfortunately be compelled to initiate legal steps for the recovery of the amount in arrears.</i></font>"
     y_pos = add_paragraph(c, legal_warning, styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space after legal warning
-    y_pos -= 10
+    y_pos -= 4  # Reduced from 6 to 4
     
     # Add availability statement
     availability_para = "We remain available to attend to any queries you may have in relation to this letter."
     y_pos = add_paragraph(c, availability_para, styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space before closing
-    y_pos -= 8
+    y_pos -= 4  # Reduced from 6 to 4
     
     # Add closing paragraph
-    closing_para = "We thank you for your prompt consideration and cooperation in relation to the above settlement of overdue arrears."
+    closing_para = "Thanking you for your prompt consideration and cooperation in relation to the above settlement of overdue arrears."
     y_pos = add_paragraph(c, closing_para, styles['BodyText'], margin, y_pos, content_width)
     
     # Add breathing space before signature
-    y_pos -= 15
+    y_pos -= 15  # Increased from 12 to 15 to add more space before "Yours faithfully"
     
     # Add closing salutation
     c.setFont("Cambria", 10.5)
     c.setFillColor(colors.black)
     c.drawString(margin, y_pos, "Yours faithfully,")
-    y_pos -= 25
+    y_pos -= 18  # Reduced from 25 to 18 to bring "NIC General Insurance..." closer
     
     # Add signature line
     c.setFont("Cambria-Bold", 10.5)
     c.drawString(margin, y_pos, "NIC General Insurance Co. Ltd - Arrears Recovery Team")
-    y_pos -= 20
+    y_pos -= 15  # Reduced from 20 to 15
     
     # Add computer-generated letter disclaimer (centered, light grey)
-    y_pos -= 15
+    y_pos -= 10  # Reduced from 15 to 10 to push disclaimer up
     c.setFont("Cambria", 9)
     c.setFillColor(colors.Color(0.5, 0.5, 0.5))  # Light grey color
     disclaimer_text = "This is a computer-generated letter and does not require any signature."
