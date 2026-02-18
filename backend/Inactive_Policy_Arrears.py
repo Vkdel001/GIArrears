@@ -1294,7 +1294,7 @@ for index, row in df.iterrows():
     y_pos = add_paragraph(c, subject_text, styles['BodyText'], margin, y_pos, content_width)
     
     # Add main content paragraph (inactive policy format)
-    main_para = f"We wish to inform you that, as at <font name='Cambria-Bold'>{current_date}</font>, our records indicate an outstanding amount of <font name='Cambria-Bold'>{format_currency(outstanding_amount)}</font> on your {args.product_type} insurance policy, as detailed below:"
+    main_para = f"We wish to inform you that, as at <font name='Cambria-Bold'>{current_date}</font>, our records indicate an outstanding amount of <font name='Cambria-Bold'>{format_currency(outstanding_amount)}</font> on your {subject_product.lower()} insurance policy, as detailed below:"
     y_pos = add_paragraph(c, main_para, styles['BodyText'], margin, y_pos, content_width)    #Create arrears table
     table_headers = [
         Paragraph('<font name="Cambria-Bold">Cover Period</font>', styles['TableTextBold']),
